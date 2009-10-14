@@ -1,0 +1,35 @@
+name:               twelfppr
+version:            0.1
+homepage:           http://sigkill.dk
+synopsis:           A tool for prettyprinting Twelf signatures.
+description:
+    The Twelf prettyprinter is a program that can prettyprint
+    Twelf signatures in traditional logic notation.
+category:           Prettyprinting
+license:            BSD3
+license-file:       LICENSE
+author:             Troels Henriksen
+maintainer:         athas@sigkill.dk
+extra-source-files: README
+cabal-version:      >= 1.2
+build-type:         Simple
+
+flag testing
+    description: Testing mode, only build minimal components
+    default: False
+
+executable twelfppr
+    build-depends: mtl, unix, time, base==4.*, containers
+    main-is:            TwelfPPR.lhs
+
+    ghc-options:        -funbox-strict-fields -Wall
+    ghc-prof-options:   -prof -auto-all
+    extensions:         CPP
+
+    if flag(testing)
+        cpp-options:    -DTESTING
+        hs-source-dirs: . tests/
+        build-depends:  QuickCheck < 2
+        ghc-options:    -Werror
+    if flag(testing)
+        build-depends:  random
