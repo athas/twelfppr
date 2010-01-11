@@ -347,18 +347,8 @@ opassoc = symbol "none"  *> pure AssocNone <|>
 \end{code}
 
 \begin{code}
-skip :: GenParser Char u ()
-skip = skipMany (    try (space *> return ())
-                 <|> try (string "%" *> newline *> return ())
-                 <|> (try (string "% ") <|> try (string "%%"))
-                     *> many (noneOf "\n") *> newline *> return ()
-                 <|> try (blk *> return ()))
-    where blk = string "%{" *> (anyChar `manyTill` try (string "}%"))
-\end{code}
-
-\begin{code}
 sig :: TwelfParser [Decl]
-sig = skip *> sig'
+sig = whiteSpace *> sig'
     where sig' = (eof *> pure []) <|> do
                    d <- decl
                    case d of
