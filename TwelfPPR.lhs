@@ -61,6 +61,7 @@ import TwelfPPR.LF
 import TwelfPPR.GrammarGen
 import TwelfPPR.Parser
 import TwelfPPR.Pretty
+import TwelfPPR.TwelfServer
 import TwelfPPR.Util
 \end{code}
 

@@ -19,12 +19,13 @@ flag testing
     default: False
 
 executable twelfppr
-    build-depends: mtl, unix, time, base==4.*, containers, parsec==3.*, filepath==1.*
+    build-depends: mtl, unix, time, base==4.*, containers, parsec==3.*, filepath==1.*, process
     main-is:            TwelfPPR.lhs
     other-modules:      TwelfPPR.LF
                         TwelfPPR.Parser
                         TwelfPPR.Pretty
                         TwelfPPR.GrammarGen
+                        TwelfPPR.TwelfServer
                         TwelfPPR.Util
 
     ghc-options:        -funbox-strict-fields -Wall
