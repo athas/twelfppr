@@ -438,7 +438,8 @@ testp = runP (genExpParser *> sig) initDeclState "" $ intercalate "\n" input
                    "d : ((a <- b) <- ({x:_} ((c x) -> (p x)))).",
                    "d : ((a <~ b) <~ ({x:_} ((c x) ~> (p x)))).",
                    "%abbrev Int# = ptp PInt#.",
-                   "%cockballs.",
+                   "w : Int#.",
+                   "%unknown definition.",
                    "%infix left 0 <~.",
                    "% fooobar",
                    "%infix right 0 ~>.",
@@ -446,8 +447,7 @@ testp = runP (genExpParser *> sig) initDeclState "" $ intercalate "\n" input
                    "d : ((a <~ b) <~ ({x:_} ((c x) ~> (p x)))).",
                    "%%bazraaa",
                    "t : a -> b -> type.",
-                   "myexp : exp = lam[x] case x (s z) [y] z.",
-                   ""]
+                   "myexp : exp = lam[x] case x (s z) [y] z."]
 
 ttestp :: Either ParseError Term
 ttestp = runP (genExpParser *> term) initDeclState "" $ intercalate "\n" input
