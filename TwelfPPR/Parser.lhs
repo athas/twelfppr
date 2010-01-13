@@ -35,21 +35,16 @@ module TwelfPPR.Parser ( Term(..)
 ) where
 
 import Control.Applicative
-import Control.Monad
 import "mtl" Control.Monad.Identity
-import "mtl" Control.Monad.Trans
 
 import Data.Char
 import Data.List
 import qualified Data.Map as M
 import Data.Ord
 
-import Debug.Trace
-
 import Text.Parsec hiding ((<|>), many, optional)
 import Text.Parsec.String
 import Text.Parsec.Expr
-import qualified Text.Parsec.Token as T
 
 --import TwelfPPR.LF
 \end{code}
@@ -100,13 +95,10 @@ upcaseId []      = True
 upcaseId ('_':_) = True
 upcaseId (c:_)   = c `elem` ['A'..'Z']
 
-lowcaseId :: String -> Bool
-lowcaseId = not . upcaseId
-
 ident :: String -> Term
-ident "_"            = THole
-ident s | upcaseId s = TVar s
-        | otherwise  = TConstant s
+ident "_"              = THole
+ident s | upcaseId s   = TVar s
+        | otherwise    = TConstant s
 \end{code}
 
 Much of the parsing process consists of combining syntactical tokens
@@ -262,12 +254,12 @@ that could enlargen the token.
 
 \begin{code}
 procOpList :: OpList -> OperatorTable [Char] DeclState Identity Term
-procOpList ops = (map (map f) . arrange) $ ops ++ initOps
+procOpList ops = (map (map p) . arrange) $ ops ++ initOps
     where arrange = groupBy (\(_,x,_) (_,y,_) -> x==y) . reverse
-          f (name, _, OpBin a f) = Infix (try $ token name *> return f) a
-          f (name, _, OpPost f)  = Postfix (try $ token name *> return f)
-          f (name, _, OpPre f)   = Prefix (try $ token name *> return f)
-          token s = lexeme (string s *> notFollowedBy idChar)
+          p (name, _, OpBin a f) = Infix (try $ munch name *> return f) a
+          p (name, _, OpPost f)  = Postfix (try $ munch name *> return f)
+          p (name, _, OpPre f)   = Prefix (try $ munch name *> return f)
+          munch s = lexeme (string s *> notFollowedBy idChar)
 \end{code}
 
 The actual term parsing is carried out by a triplet of parsers: 
@@ -322,16 +314,20 @@ data Decl = DTerm String Term
           | DInfix Assoc Integer String
           | DPrefix Integer String
           | DPostfix Integer String
-          | DName String String (Maybe String)
           | DOtherDecl String String
 \end{code}
+
+The parser for a single declaration is a trivial rewrite of the |decl|
+production rule in Section 3.1 of the Twelf User's Guide.
 
 \begin{code}
 decl :: TwelfParser Decl
 decl = (choice $ map try
         [dabbr, infixd, prfixd, psfixd, odecl, defd, termd]) 
        <* symbol "."
-    where defd   = pure DDefinition <*> identifier <*> ((colon *> term) <|> pure THole) <*> (symbol "=" *> term)
+    where defd   =     pure DDefinition
+                   <*> identifier 
+                   <*> ((colon *> term) <|> pure THole) <*> (symbol "=" *> term)
           dabbr  = pure DAbbrev <* symbol "%abbrev" <*> identifier <*> (symbol "=" *> term)
           infixd = pure DInfix <* symbol "%infix" <*> opassoc <*> lexeme decimal <*> identifier
           prfixd = pure DPrefix <* symbol "%prefix" <*> lexeme decimal <*> identifier
@@ -347,25 +343,24 @@ opassoc = symbol "none"  *> pure AssocNone <|>
           symbol "right" *> pure AssocRight
 \end{code}
 
+The full signature parser is the only one that skips leading
+whitespace.  Apart from that, it continuously reads declarations until
+reaching end of file.  Some declarations may affect the parsing of
+later ones, and are treated specially, but all end up in the final
+parse result.
+
 \begin{code}
 sig :: TwelfParser [Decl]
 sig = whiteSpace *> sig'
     where sig' = (eof *> pure []) <|> do
-                   d <- decl
-                   case d of
-                     DAbbrev s t -> do
-                       defAbbrev (s, t)
-                       (d:) <$> sig'
-                     DInfix a p s -> do
-                       defOp $ (s, p, OpBin a $ TApp . TApp (ident s))
-                       (d:) <$> sig'
-                     DPrefix p s -> do
-                       defOp $ (s, p, OpPre $ TApp (ident s))
-                       (d:) <$> sig'
-                     DPostfix p s -> do
-                       defOp $ (s, p, OpPost $ TApp (ident s))
-                       (d:) <$> sig'
-                     _            -> (d:) <$> sig'
+            d <- decl
+            case d of
+              DAbbrev s t  -> defAbbrev (s, t)
+              DInfix a p s -> defOp $ (s, p, OpBin a $ TApp . TApp (ident s))
+              DPrefix p s  -> defOp $ (s, p, OpPre $ TApp (ident s))
+              DPostfix p s -> defOp $ (s, p, OpPost $ TApp (ident s))
+              _            -> return ()
+            (d:) <$> sig'
 \end{code}
 
 Finally, we define shallow interface functions for running the parser.
@@ -375,24 +370,28 @@ parseDecl :: DeclState
           -> SourceName
           -> String
           -> Either ParseError (Decl, DeclState)
-parseDecl s = runP (uncurry (liftA2 (,)) (genExpParser *> decl,
-                                          getState)) s
+parseDecl s = runP (pure (,) <*> (genExpParser *> decl) <*> getState) s
 
 parseSig :: DeclState
          -> SourceName 
          -> String 
          -> Either ParseError ([Decl], DeclState)
-parseSig s = runP (uncurry (liftA2 (,)) (genExpParser *> sig, getState)) s
+parseSig s = runP (pure (,) <*> (genExpParser *> sig) <*> getState) s
 \end{code}
 
-\section{Sources file}
+\section{Configuration file}
+
+The syntax for Twelf configuration files is sadly completely
+unspecified.  The parser implemented here reads a file name per line,
+and permits the same syntax for block- and line-comments as the rest
+of Twelf, with the caveat that all comments have to start at the
+beginning of a line (that is, you can have file names that contain
+percentage signs).
 
 \begin{code}
 config :: GenParser Char () [String]
-config = many $ many1 (noneOf "\n") <* many newline
-\end{code}
+config = whiteSpace *> many (lexeme $ many1 $ noneOf "\n")
 
-\begin{code}
 parseConfig :: SourceName
              -> String
              -> Either ParseError [String]
@@ -400,6 +399,11 @@ parseConfig = parse config
 \end{code}
 
 \section{Unparsing}
+
+We define |Show| instances for turning |Term|s and |Declaration|s into
+strings that, if parsed again, would result in values identical to the
+originals.  That is, the parsers and these |Show| instances are
+inverse operations of each other.
 
 \begin{code}
 instance Show Term where
@@ -432,37 +436,4 @@ instance Show Decl where
               showAssoc AssocLeft = "left"
               showAssoc AssocRight = "right"
               showAssoc AssocNone = "none"
-\end{code}
-
-\section{Testing}
-
-\begin{code}
-testp :: Either ParseError [Decl]
-testp = runP (genExpParser *> sig) initDeclState "" $ intercalate "\n" input
-    where input = ["%",
-                   "t : a -> b -> type.",
-                   "d : a <- b <- {x} c x -> p x.",
-                   "d : ({x} c x -> p x) -> b -> a.",
-                   "d : ((a <- b) <- ({x:_} ((c x) -> (p x)))).",
-                   "d : ((a <~ b) <~ ({x:_} ((c x) ~> (p x)))).",
-                   "%abbrev Int# = ptp PInt#.",
-                   "w : Int#.",
-                   "%unknown definition.",
-                   "%infix left 0 <~.",
-                   "% fooobar",
-                   "%infix right 0 ~>.",
-                   "t : (a ~> a) ~> a ~> type.",
-                   "d : ((a <~ b) <~ ({x:_} ((c x) ~> (p x)))).",
-                   "%%bazraaa",
-                   "t : a -> b -> type.",
-                   "myexp : exp = lam[x] case x (s z) [y] z."]
-
-ttestp :: Either ParseError Term
-ttestp = runP (genExpParser *> term) initDeclState "" $ intercalate "\n" input
-    where input = ["a b"]
-
-test :: IO ()
-test = either print (mapM_ print) testp
-ttest :: IO ()
-ttest = print ttestp
 \end{code}
