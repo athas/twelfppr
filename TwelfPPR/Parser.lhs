@@ -29,6 +29,7 @@ module TwelfPPR.Parser ( Term(..)
                        , Decl(..)
                        , DeclState(..)
                        , initDeclState
+                       , parseDecl
                        , parseSig
                        , parseConfig
 ) where
@@ -370,6 +371,13 @@ sig = whiteSpace *> sig'
 Finally, we define shallow interface functions for running the parser.
 
 \begin{code}
+parseDecl :: DeclState
+          -> SourceName
+          -> String
+          -> Either ParseError (Decl, DeclState)
+parseDecl s = runP (uncurry (liftA2 (,)) (genExpParser *> decl,
+                                          getState)) s
+
 parseSig :: DeclState
          -> SourceName 
          -> String 

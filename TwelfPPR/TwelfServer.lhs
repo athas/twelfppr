@@ -24,6 +24,7 @@ control the subprocess.
 \begin{code}
 module TwelfPPR.TwelfServer ( TwelfMonadT
                             , withTwelfServer
+                            , runTwelfCmd
 ) where
 
 import Control.Applicative

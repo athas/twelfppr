@@ -25,6 +25,7 @@ executable twelfppr
                         TwelfPPR.Parser
                         TwelfPPR.Pretty
                         TwelfPPR.GrammarGen
+                        TwelfPPR.Reconstruct
                         TwelfPPR.TwelfServer
                         TwelfPPR.Util
 

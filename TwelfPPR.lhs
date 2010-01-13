@@ -61,6 +61,7 @@ import TwelfPPR.LF
 import TwelfPPR.GrammarGen
 import TwelfPPR.Parser
 import TwelfPPR.Pretty
+import TwelfPPR.Reconstruct
 import TwelfPPR.TwelfServer
 import TwelfPPR.Util
 \end{code}
@@ -261,8 +262,9 @@ main :: IO ()
 main = do [cfg] <- getArgs
           str    <- readFile cfg
           either print (proc cfg) $ parseConfig cfg str
-    where proc cfg = (=<<) (either print (mapM_ print)) .
-                     procCfg initDeclState cfg
+    where proc cfg = (=<<) (either print rprint)
+                     . procCfg initDeclState cfg
+          rprint s = mapM_ print =<< reconstruct s
           procCfg s cfg []     = return $ Right []
           procCfg s cfg (f:fs) = do
             str <- readFile $ replaceFileName cfg f
