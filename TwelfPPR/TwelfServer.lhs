@@ -12,7 +12,7 @@
 \end{code}
 \end{ignore}
 
-\section{TwelfPPR.TwelfServer}
+\chapter{TwelfPPR.TwelfServer}
 
 We run Twelf itself as a subprocess in order to do term
 reconstruction.  This is vastly easier than implementing a term
