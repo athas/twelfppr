@@ -13,6 +13,7 @@
 %-----------------------------------------------------------------------------
 
 \chapter{LF representation}
+\label{chap:lf representation}
 
 This chapter implements the data types and ancillary functions for
 representing LF in Haskell.
@@ -69,7 +70,7 @@ A type family definition maps names of terms of the premises to the
 actual terms themselves.
 
 \begin{code}
-data FamilyDef = FamilyDef (M.Map String Type)
+data FamilyDef = FamilyDef (M.Map TypeRef Type)
                    deriving (Show, Eq)
 \end{code}
 

@@ -52,8 +52,6 @@ import Data.Maybe
 import Data.Monoid
 import qualified Data.Set as S
 
-import Text.ParserCombinators.Parsec hiding (optional, many, (<|>))
-
 import System.Environment
 import System.FilePath
 
@@ -62,7 +60,6 @@ import TwelfPPR.GrammarGen
 import TwelfPPR.Parser
 import TwelfPPR.Pretty
 import TwelfPPR.Reconstruct
-import TwelfPPR.TwelfServer
 import TwelfPPR.Util
 \end{code}
 
@@ -85,8 +82,8 @@ ppr sig = newlines <$> liftM2 (++) prods infs
           newlines = intercalate "\n"
           prods = do 
             mapM_ (\x -> pprAsProd sig (S.singleton (fst x)) x) . filter (prodRulePossible . snd) $ defs
-            prods <- M.toList <$> getsGGenEnv prod_rules
-            return $ map (uncurry pprFam) prods
+            rules <- M.toList <$> getsGGenEnv prod_rules
+            return $ map (uncurry pprFam) rules
           infs  = mapM (return . pprAsInf sig) . filter (not . prodRulePossible . snd) $ defs
 \end{code}
 
@@ -264,7 +261,7 @@ main = do [cfg] <- getArgs
           either print (proc cfg) $ parseConfig cfg str
     where proc cfg = (=<<) (either print rprint)
                      . procCfg initDeclState cfg
-          rprint s = mapM_ print =<< reconstruct s
+          rprint s = test =<< toSignature <$> reconstruct s
           procCfg s cfg []     = return $ Right []
           procCfg s cfg (f:fs) = do
             str <- readFile $ replaceFileName cfg f

@@ -32,6 +32,7 @@ module TwelfPPR.Parser ( Term(..)
                        , parseDecl
                        , parseSig
                        , parseConfig
+                       , toSignature
 ) where
 
 import Control.Applicative
@@ -40,13 +41,14 @@ import "mtl" Control.Monad.Identity
 import Data.Char
 import Data.List
 import qualified Data.Map as M
+import Data.Maybe
 import Data.Ord
 
 import Text.Parsec hiding ((<|>), many, optional)
 import Text.Parsec.String
 import Text.Parsec.Expr
 
---import TwelfPPR.LF
+import qualified TwelfPPR.LF as LF
 \end{code}
 
 To begin with, we define a data structure for terms.  Twelf does not
@@ -436,4 +438,127 @@ instance Show Decl where
               showAssoc AssocLeft = "left"
               showAssoc AssocRight = "right"
               showAssoc AssocNone = "none"
+\end{code}
+
+\section{Interpreting as LF}
+
+Obtaining a parse tree of a Twelf program is all well and good, but it
+is quite cumbersome to work with.  In \Fref{chap:lf representation} we
+defined data types much closer to the usual interpretation of LF, and
+we therefore need to be able to convert our |Decl|s and |Term|s to an
+|LF.Signature| containing |LF.Type|s and |LF.Object|s.  We only work
+on fully reconstructed terms (though see
+\Fref{chap:twelfppr.reconstruct}).
+
+Recall that an |LF.Signature| is merely a mapping from names of type
+families to type families.  Our algorithm therefore scans through the
+declaration list, looking for type family definitions.  If one is
+found, it will scan through the rest of the list looking for type
+definitions in that family.  We define the \textit{conclusion} of a
+term as the body of any $\Pi$-constructs.
+
+\begin{code}
+conclusion :: Term -> Term
+conclusion (TArrow _ t) = conclusion t
+conclusion (TSchem _ t) = conclusion t
+conclusion t            = t
+
+isFamDef :: Term -> Bool
+isFamDef t = conclusion t == TType
+
+toSignature :: [Decl] -> LF.Signature
+toSignature ds = M.fromList $ catMaybes $ map convert ds
+    where convert (DTerm s t) 
+              | isFamDef t = Just (s, buildFamily s ds)
+          convert _ = Nothing
+\end{code}
+
+We need to gather all the definitions that constitute a member of the
+type family that we are interested in.  A term definition is eligible
+if its conclusion (see above) is in the type family.
+
+\begin{code}
+buildFamily :: LF.KindRef -> [Decl] -> LF.FamilyDef
+buildFamily s = LF.FamilyDef . M.fromList . map convert . catMaybes . map pick
+    where pick (DTerm name t) 
+              | ok (conclusion t) = Just (name, t)
+          pick _ = Nothing
+          ok (TApp t _)        = ok t
+          ok (TConstant s2)    = s == s2
+          ok (TAscription t _) = ok t
+          ok _                 = False
+          convert (name, t)    = (name, toType s t)
+\end{code}
+
+Objects and types are merged in a single syntactical category in
+Twelf, but they are distinct concepts in LF type theory.  Hence, we
+define two different conversion functions, based on whether we expect
+a type or an object in some position.  This means that, for instance,
+a |TApp| is interpreted differently based on whether it is in a type
+or object context.
+
+Arrows and $\Pi$-constructs are trivially converted to the
+corresponding LF type.
+
+\begin{code}
+toType :: LF.KindRef -> Term -> LF.Type
+toType s (TArrow t1 t2) =
+  LF.TyArrow (toType s t1) (toType s t2)
+toType s (TSchem (name, t1) t2) = 
+  LF.TyCon name (toType s t1) (toType s t2)
+\end{code}
+
+Application is slightly more complicated; the crux being that the
+Twelf syntax permits curried application of arbitrary terms, while the
+LF level of types encodes a fixed application of a type or kind name
+to a sequence of objects.  We treat a constant or variable by itself
+as the kind named by the constant applied to zero arguments.
+
+\begin{code}
+toType _ (TApp t1 t2) = uncurry LF.TyApp $ handleApp t1 t2
+    where handleApp (TVar name) t' = 
+              (name, [toObject t'])
+          handleApp (TConstant name) t' =
+              (name, [toObject t'])
+          handleApp (TApp funt argt) t =
+              let (t', os) = handleApp funt argt
+              in (t', os ++ [toObject t])
+          handleApp _ _ =
+              error "Type or kind name expected in term"
+toType _ (TConstant name) = LF.TyApp name []
+toType _ (TVar name)      = LF.TyApp name []
+\end{code}
+
+Type ascriptions are completely ignored: they have no semantic value.
+
+\begin{code}
+toType s (TAscription t _) = toType s t
+\end{code}
+
+The constant \texttt{type} is not permitted in types, only in type
+family definitions.  The presence of holes is also not permitted, and
+type reconstruction should be performed to remove them.  Finally,
+lambda bindings is only permitted in objects.
+
+\begin{code}
+toType _ TType = error "'type' found where actual type expected in term"
+toType _ THole    = error "Cannot convert incomplete term to object"
+toType _ (TLambda _ _) = 
+    error "Object found where type or kind expected in term"
+\end{code}
+
+Converting terms to objects is trivial.  Again, we ignore any type
+ascriptions.
+
+\begin{code}
+toObject :: Term -> LF.Object
+toObject (TLambda (name, _) t) = LF.Lambda name (toObject t)
+toObject (TVar t)          = LF.Var t
+toObject (TConstant t)     = LF.Type t
+toObject (TApp t1 t2)      = LF.App (toObject t1) (toObject t2)
+toObject (TAscription t _) = toObject t
+toObject THole             =
+    error "Cannot convert incomplete term to object"
+toObject _                 =
+    error "Type found where object expected in term"
 \end{code}
