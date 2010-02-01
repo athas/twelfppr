@@ -43,7 +43,7 @@ import TwelfPPR.Util
 \end{code}
 
 \begin{code}
-type FreeVarContext = S.Set TypeRef
+type FreeVarContext = S.Set KindRef
 type TyUsage = (TypeRef, FreeVarContext)
 type NameContext = M.Map TypeRef (M.Map FreeVarContext String)
 data GGenEnv = GGenEnv { name_context :: NameContext
@@ -86,10 +86,16 @@ are used in higher-order premises in any term in the signature.
 
 \begin{code}
 pprAsProd :: MonadGGen m => Signature
-          -> FreeVarContext
           -> (TypeRef, FamilyDef)
           -> m ()
-pprAsProd sig c (t, FamilyDef ms) = do
+pprAsProd sig x@(t, _) = pprWithContext sig context x
+    where context = initContext sig t
+
+pprWithContext :: MonadGGen m => Signature
+               -> FreeVarContext
+               -> (TypeRef, FamilyDef)
+               -> m ()
+pprWithContext sig c (t, FamilyDef ms) = do
   prods <- getsGGenEnv prod_rules
   name  <- namer sig (t, c)
   case M.lookup name prods of
@@ -98,7 +104,7 @@ pprAsProd sig c (t, FamilyDef ms) = do
                   modifyGGenEnv $ \s ->
                       s { prod_rules = M.insert name (mappend varsyms . mconcat $ syms)
                                        (prod_rules s) }
-      where vars    = famVars sig t `S.intersection` c
+      where vars    = initContext sig t `S.intersection` c
             varsyms = S.map (('$':) . capitalise) vars
 
 pprFam :: String -> S.Set String -> String
@@ -109,7 +115,7 @@ pprFam name ts = capitalise name ++
 
 \begin{code}
 namer :: MonadGGen m => Signature -> TyUsage -> m String
-namer sig (t, vs) = do
+namer sig (t, vs') = do
   context <- getsGGenEnv name_context
   case M.lookup t context of
     Just m  -> case M.lookup vs m of
@@ -119,20 +125,21 @@ namer sig (t, vs) = do
                    modifyGGenEnv $ \s ->
                      s { name_context =
                          M.insert t (M.insert vs new m) context }
-                   pprAsProd sig vs (t, fromJust $ M.lookup t sig)
+                   pprWithContext sig vs (t, fromJust $ M.lookup t sig)
                    return new
     Nothing -> do
       let new = newName M.empty
       modifyGGenEnv $ \s ->
           s { name_context =
               M.insert t (M.singleton vs new) context }
-      pprAsProd sig vs (t, fromJust $ M.lookup t sig)
+      pprWithContext sig vs (t, fromJust $ M.lookup t sig)
       return new
     where newName :: M.Map FreeVarContext String -> String
           newName existing
-             | vs == eps = t
+             | vs == initContext sig t = t
              | otherwise = t ++ replicate n '\''
              where n = 1 + M.size (M.filterWithKey (\k _ -> k/=eps) existing)
+          vs = vs' `S.intersection` referencedKinds sig t
           eps = S.singleton t
 \end{code}
 
@@ -177,18 +184,13 @@ For each parametric premise we create a symbol for variables of the
 type families used as parameters in the premise.
 
 \begin{code}
-famVars :: Signature -> String -> S.Set TypeRef
-famVars sig name =
-    S.fromList . mconcat . concatMap (varsFromFam . snd) . M.toList $ sig
-    where varsFromFam (FamilyDef defs) =
-              map (varsFromTypeDef name . snd) . M.toList $ defs
+hasVar :: TypeRef -> FamilyDef -> Bool
+hasVar k (FamilyDef fam) = any (typeHasVar) $ M.elems fam
+    where typeHasVar    = any premiseHasVar . premises 
+          premiseHasVar = isJust . find (==TyApp k []) . premises
 
-varsFromTypeDef :: TypeRef -> Type -> [TypeRef]
-varsFromTypeDef _ (TyApp _ []) = []
-varsFromTypeDef name t = concatMap varsFromPremise $ premises t
-    where varsFromPremise p
-              | isJust (find (==TyApp name []) (premises p))
-                  = [name]
-              | otherwise
-                  = []
+initContext :: Signature -> String -> FreeVarContext
+initContext sig name 
+    | hasVar name (fromJust $ M.lookup name sig) = S.singleton name
+    | otherwise = S.empty
 \end{code}

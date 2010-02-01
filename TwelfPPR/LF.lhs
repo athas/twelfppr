@@ -26,9 +26,12 @@ module TwelfPPR.LF ( KindRef
                    , premises
                    , Object(..)
                    , FamilyDef(..)
-                   , Signature)
+                   , Signature
+                   , referencedKinds )
     where
+import Data.Maybe
 import qualified Data.Map as M
+import qualified Data.Set as S
 \end{code}
 
 A type $t_1 \rightarrow t_2 \ldots t_n$ is said to have the
@@ -79,4 +82,43 @@ definitions.
 
 \begin{code}
 type Signature = M.Map String FamilyDef
+\end{code}
+
+\section{Inspecting for information}
+
+We will eventually need to extract various interesting nuggets of
+information about LF definitions.
+
+To determine which kinds are applied in some type $t$ we
+can trivially walk through the tree.
+
+\begin{code}
+refsInType :: Type -> S.Set KindRef
+refsInType (TyArrow t1 t2) = refsInType t1 `S.union` refsInType t2
+refsInType (TyCon _ t1 t2) = refsInType t1 `S.union` refsInType t2
+refsInType (TyApp k _)     = S.singleton k
+\end{code}
+
+The kind applications of some type family definition is the union of
+all kind applications in the member types.
+
+\begin{code}
+refsInTyFam :: FamilyDef -> S.Set KindRef
+refsInTyFam (FamilyDef fam) = 
+  foldl S.union S.empty $ map refsInType $ M.elems fam
+\end{code}
+
+The above definitions only catch immediate references, which will not
+be adequate for our purposes.  Thus, we also need to recursively
+inspect the referenced kinds.
+
+\begin{code}
+referencedKinds :: Signature -> KindRef -> S.Set KindRef
+referencedKinds sig = referencedKinds' S.empty
+    where referencedKinds' visited fr
+              | fr `S.member` visited = S.empty
+              | otherwise = foldl S.union (S.singleton fr) refs'
+              where refs' = map (referencedKinds' visited') refs
+                    refs  = S.toList $ refsInTyFam $ fromJust $ M.lookup fr sig
+                    visited' = S.insert fr visited
 \end{code}

@@ -47,7 +47,6 @@ import Control.Monad.State
 import Data.Char
 import Data.List
 import qualified Data.Map as M
-import qualified Data.Set as S
 
 import System.Environment
 import System.FilePath
@@ -78,7 +77,7 @@ ppr sig = newlines <$> liftM2 (++) prods infs
     where defs = M.toList sig
           newlines = intercalate "\n"
           prods = do 
-            mapM_ (\x -> pprAsProd sig (S.singleton (fst x)) x) . filter (prodRulePossible . snd) $ defs
+            mapM_ (pprAsProd sig) . filter (prodRulePossible . snd) $ defs
             rules <- M.toList <$> getsGGenEnv prod_rules
             return $ map (uncurry pprFam) rules
           infs  = mapM (return . pprAsInf sig) . filter (not . prodRulePossible . snd) $ defs
