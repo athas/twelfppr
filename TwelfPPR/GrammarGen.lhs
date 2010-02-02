@@ -25,16 +25,19 @@ rules.
 module TwelfPPR.GrammarGen ( GGenEnv(..)
                            , emptyGGenEnv
                            , MonadGGen(..)
+                           , KindUsage
+                           , ProdRule
+                           , RuleSymbol
                            , prodRulePossible
                            , pprAsProd
-                           , pprFam
+                           , pprWithContext
+                           , prettyProd
 ) where
 import Control.Monad.State
 import Data.Char
 import Data.List
 import qualified Data.Map as M
 import Data.Maybe
-import Data.Monoid
 import qualified Data.Set as S
 
 import TwelfPPR.LF
@@ -42,12 +45,62 @@ import TwelfPPR.Pretty
 import TwelfPPR.Util
 \end{code}
 
+Consider the following simple Twelf signature.
+
+\begin{verbatim}
+foo : type.
+bar : type.
+baz : type.
+
+foo_a : foo.
+foo_b : bar -> foo.
+
+bar_a : bar.
+bar_b : (bar -> foo) -> bar.
+
+baz_a : bar -> baz.
+\end{verbatim}
+
+A naive way to represent this as a grammar would be as follows.
+\\
+\begin{tabular}{rl}
+  $Foo ::=$ & $Foo\_a \mid Foo\_b(Bar)$ \\
+  $Bar ::=$ & $\$Bar \mid Bar \mid Bar\_b(\$Bar.Foo)$ \\
+  $Baz ::=$ & $Baz\_a(Bar)$ \\
+\end{tabular}
+\\
+This representation ignores the fact that, in the Twelf code, a
+$\$Bar$ (variable) cannot appear when the $Bar$ rule is reached
+through a $Foo\_b$ or $Baz\_a$ nonterminal (except if a $Foo\_b$ is
+reached through a $Bar\_b$).  A grammar that accurately represents the
+meaning of the original code would be as follows:
+\\
+\begin{tabular}{rl}
+  $Foo ::=$ & $Foo\_a \mid Foo\_b(Bar')$ \\
+  $Foo' ::=$ & $Foo\_a \mid Foo\_b(Bar)$ \\
+  $Bar ::=$ & $\$Bar \mid Bar \mid Bar\_b(\$Bar.Foo')$ \\
+  $Bar' ::=$ & $Bar \mid Bar\_b(\$Bar.Foo')$ \\
+  $Baz ::=$ & $Baz\_a(Bar')$ \\
+\end{tabular}
+\\
+
+This means that we not only have to track which kinds are referenced
+in the type definitions, but also which kinds can appear as free
+variables in subterms.
+
 \begin{code}
 type FreeVarContext = S.Set KindRef
-type TyUsage = (TypeRef, FreeVarContext)
-type NameContext = M.Map TypeRef (M.Map FreeVarContext String)
-data GGenEnv = GGenEnv { name_context :: NameContext
-                       , prod_rules   :: M.Map String (S.Set String) }
+type KindUsage = (KindRef, FreeVarContext)
+type ProdRule = (M.Map TypeRef RuleSymbol, Bool)
+type RuleSymbol = [([KindRef], KindUsage)]
+\end{code}
+
+\begin{code}
+type NameContext = M.Map KindRef (M.Map FreeVarContext String)
+data GGenEnv = GGenEnv 
+    { name_context :: NameContext
+    , prod_rules   :: M.Map KindUsage ProdRule
+    }
 
 emptyGGenEnv :: GGenEnv
 emptyGGenEnv = GGenEnv { name_context = M.empty
@@ -73,110 +126,140 @@ A type is printable as a production rule if its conclusion is a 0-arity kind.
 
 \begin{code}
 prodRulePossible :: FamilyDef -> Bool
-prodRulePossible (FamilyDef ms) = all (check . snd) $ M.toList ms
+prodRulePossible (FamilyDef ms) = all check $ M.elems ms
     where check (TyArrow _ t)       = check t
           check (TyApp _ [])        = True
           check _                   = False
 \end{code}
 
-A single type family definition is printed as a production rule, with
-the symbols on the right-hand side being a function not only of the
-terms in the type family, but also of whether any terms in the family
-are used in higher-order premises in any term in the signature.
+A single kind definition is printed as a production rule, with the
+symbols on the right-hand side being a function of the member types.
+We ensure that when we generate a production rule, all referenced
+kinds (taking into account the possibility of free variables) are also
+generated.
 
 \begin{code}
 pprAsProd :: MonadGGen m => Signature
-          -> (TypeRef, FamilyDef)
+          -> (KindRef, FamilyDef)
           -> m ()
-pprAsProd sig x@(t, _) = pprWithContext sig context x
-    where context = initContext sig t
-
-pprWithContext :: MonadGGen m => Signature
-               -> FreeVarContext
-               -> (TypeRef, FamilyDef)
-               -> m ()
-pprWithContext sig c (t, FamilyDef ms) = do
-  prods <- getsGGenEnv prod_rules
-  name  <- namer sig (t, c)
-  case M.lookup name prods of
-    Just _  -> return ()
-    Nothing -> do syms <- mapM (typeSymbols (namer sig) c) $ M.toList ms
-                  modifyGGenEnv $ \s ->
-                      s { prod_rules = M.insert name (mappend varsyms . mconcat $ syms)
-                                       (prod_rules s) }
-      where vars    = initContext sig t `S.intersection` c
-            varsyms = S.map (('$':) . capitalise) vars
-
-pprFam :: String -> S.Set String -> String
-pprFam name ts = capitalise name ++ 
-                 " ::= " ++
-                 intercalate " | " (S.toList ts)
+pprAsProd sig x@(kr, fd) = do
+  let prod = pprWithContext c x
+  modifyGGenEnv $ \s ->
+      s { prod_rules = M.insert (kr, c) prod (prod_rules s) }
+  ensureProds sig prod
+    where c = initContext kr fd
 \end{code}
 
 \begin{code}
-namer :: MonadGGen m => Signature -> TyUsage -> m String
-namer sig (t, vs') = do
+ensureProds :: MonadGGen m => Signature
+            -> ProdRule
+            -> m ()
+ensureProds sig (syms, _) =
+  forM_ (krs syms) $ \(kr, c) -> do
+    let c' = c `S.intersection` referencedKinds sig kr
+    prods <- getsGGenEnv prod_rules
+    case M.lookup (kr, c') prods of
+      Just _ -> return ()
+      Nothing -> do
+        let prod = pprWithContext c' (kr, fd)
+            fd = fromJust $ M.lookup kr sig
+        modifyGGenEnv $ \s ->
+          s { prod_rules = M.insert (kr, c') prod (prod_rules s) }
+        ensureProds sig prod
+    where krs = concat . map (map snd) . M.elems
+
+pprWithContext :: FreeVarContext
+               -> (KindRef, FamilyDef)
+               -> ProdRule
+pprWithContext c (kr, FamilyDef ms) = 
+  (syms, kr `S.member` c && (hasVar kr $ FamilyDef ms))
+    where syms = M.map (typeSymbol c) ms
+\end{code}
+
+\begin{code}
+prettyProd :: MonadGGen m => Signature
+           -> KindUsage
+           -> ProdRule
+           -> m String
+prettyProd sig ku (ts, vars) = do
+  name  <- namer sig ku
+  terms <- mapM (prettySymbol sig) $ M.toList ts
+  let terms' = if vars 
+               then ('$':capitalise name) : terms
+               else terms
+  return $ capitalise name ++ " ::= " ++ intercalate " | " terms'
+\end{code}
+
+\begin{code}
+prettySymbol :: MonadGGen m => Signature
+             -> (TypeRef, RuleSymbol)
+             -> m String
+prettySymbol _ (TypeRef tn, []) = return $ capitalise tn
+prettySymbol sig (TypeRef tn, ts) = do
+  args <- liftM (intercalate ", ") $ mapM prettyPremise ts
+  return $ capitalise tn ++ "(" ++ args ++ ")"
+      where prettyPremise :: MonadGGen m => ([KindRef], KindUsage) 
+                          -> m String
+            prettyPremise ([], ku) = do
+              name <- namer sig ku
+              return $ capitalise name
+            prettyPremise (KindRef kn:tms, ku) = do
+              more <- prettyPremise (tms, ku)
+              return (("$" ++ capitalise kn ++ ".") ++ more)
+\end{code}
+
+\begin{code}
+namer :: MonadGGen m => Signature -> KindUsage -> m String
+namer sig (kr@(KindRef kn), vs) = do
   context <- getsGGenEnv name_context
-  case M.lookup t context of
+  case M.lookup kr context of
     Just m  -> case M.lookup vs m of
                  Just n -> return n
                  Nothing -> do
                    let new = newName m
                    modifyGGenEnv $ \s ->
                      s { name_context =
-                         M.insert t (M.insert vs new m) context }
-                   pprWithContext sig vs (t, fromJust $ M.lookup t sig)
+                         M.insert kr (M.insert vs new m) context }
                    return new
     Nothing -> do
       let new = newName M.empty
       modifyGGenEnv $ \s ->
           s { name_context =
-              M.insert t (M.singleton vs new) context }
-      pprWithContext sig vs (t, fromJust $ M.lookup t sig)
+              M.insert kr (M.singleton vs new) context }
       return new
-    where newName :: M.Map FreeVarContext String -> String
-          newName existing
-             | vs == initContext sig t = t
-             | otherwise = t ++ replicate n '\''
-             where n = 1 + M.size (M.filterWithKey (\k _ -> k/=eps) existing)
-          vs = vs' `S.intersection` referencedKinds sig t
-          eps = S.singleton t
+    where newName existing
+             | vs == init = capitalise kn
+             | otherwise = capitalise kn ++ replicate n '\''
+             where n = 1 + M.size (M.filterWithKey (\k _ -> k/=init) existing)
+          init = initContext kr fd
+          fd  = fromJust $ M.lookup kr sig
 \end{code}
 
 A term without premises is printed as its capitalised name, otherwise
 it is printed as its name applied to a tuple containing its premises.
 
 \begin{code}
-typeSymbols :: Monad m => (TyUsage -> m String)
-            -> FreeVarContext
-            -> (String, Type)
-            -> m (S.Set String)
-typeSymbols _ _ (name, TyApp _ []) = return $ S.singleton $ capitalise name
-typeSymbols nf c (name, t) = do
-  liftM f $ liftM (intercalate ",") $ mapM (prettyPremise nf c) $ premises t
-      where f args = S.singleton (capitalise name ++ "(" ++ args ++ ")")
+typeSymbol :: FreeVarContext
+           -> Type
+           -> RuleSymbol
+typeSymbol _ (TyApp _ []) = []
+typeSymbol c t = map (handlePremise c) $ premises t
+
+handlePremise :: FreeVarContext
+              -> Type 
+              -> ([KindRef], KindUsage)
+handlePremise c (TyArrow (TyApp kr []) t2) = (kr : krs, ku)
+    where (krs, ku) = handlePremise (S.insert kr c) t2
+handlePremise _ (TyArrow _ _)  = error "Cannot handle greater than 2nd order HOAS"
+handlePremise c (TyCon _ _ t2) = handlePremise c t2  -- checkme
+handlePremise c (TyApp kr [])   = 
+  ([], (kr, c))
+handlePremise c (TyApp k os)   = undefined
 \end{code}
 
 A constant premise is its capitalised name, just like a constant type.
 A parametric premise $p_1 \rightarrow p_2 \rightarrow \ldots
 \rightarrow p_n$ is printed as $\$p_1.\$p_2.\ldots \$p_{n-1}.p_n$.
-
-\begin{code}
-prettyPremise :: Monad m =>
-                 (TyUsage -> m String)
-              -> FreeVarContext
-              -> Type 
-              -> m String
-prettyPremise nf c (TyArrow (TyApp t []) t2) = do
-    s <- prettyPremise nf (S.insert t c) t2
-    return $ "$" ++ capitalise t ++ "." ++ s
-prettyPremise _  _ (TyArrow _ _)  = fail "Cannot handle greater than 2nd order HOAS"
-prettyPremise nf c (TyCon _ _ t2) = prettyPremise nf c t2  -- checkme
-prettyPremise nf c (TyApp s [])   = liftM capitalise $ nf (s, c)
-prettyPremise nf c (TyApp k os)   = liftM (f . capitalise) $ nf (k, c)
-    where f op = op ++ "(" ++ args ++ ")"
-          args = intercalate "," . map prettyObject $ os
-\end{code}
 
 With HOAS in Twelf we can write types where formal parameters are
 implicit, but in production rules we want such things to be explicit.
@@ -184,13 +267,13 @@ For each parametric premise we create a symbol for variables of the
 type families used as parameters in the premise.
 
 \begin{code}
-hasVar :: TypeRef -> FamilyDef -> Bool
-hasVar k (FamilyDef fam) = any (typeHasVar) $ M.elems fam
+hasVar :: KindRef -> FamilyDef -> Bool
+hasVar kr (FamilyDef fam) = any (typeHasVar) $ M.elems fam
     where typeHasVar    = any premiseHasVar . premises 
-          premiseHasVar = isJust . find (==TyApp k []) . premises
+          premiseHasVar = isJust . find (==TyApp kr []) . premises
 
-initContext :: Signature -> String -> FreeVarContext
-initContext sig name 
-    | hasVar name (fromJust $ M.lookup name sig) = S.singleton name
+initContext :: KindRef -> FamilyDef -> FreeVarContext
+initContext kr fd
+    | hasVar kr fd = S.singleton kr
     | otherwise = S.empty
 \end{code}

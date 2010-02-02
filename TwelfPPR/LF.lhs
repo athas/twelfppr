@@ -19,8 +19,8 @@ This chapter implements the data types and ancillary functions for
 representing LF in Haskell.
 
 \begin{code}
-module TwelfPPR.LF ( KindRef
-                   , TypeRef
+module TwelfPPR.LF ( KindRef(..)
+                   , TypeRef(..)
                    , Type(..)
                    , conclusion
                    , premises
@@ -39,15 +39,17 @@ A type $t_1 \rightarrow t_2 \ldots t_n$ is said to have the
 \textit{conclusion} $t_n$.
 
 \begin{code}
-type KindRef = String
-type TypeRef = String
+newtype KindRef = KindRef String
+    deriving (Show, Eq, Ord)
+newtype TypeRef = TypeRef String
+    deriving (Show, Eq, Ord)
 
 data Type = TyArrow Type Type
           | TyCon String Type Type
           | TyApp KindRef [Object]
             deriving (Show, Eq)
 
-conclusion :: Type -> String
+conclusion :: Type -> KindRef
 conclusion (TyArrow _ t2) = conclusion t2
 conclusion (TyCon _ _ t2) = conclusion t2
 conclusion (TyApp t _)    = t
@@ -81,7 +83,7 @@ A Twelf signature is a map of names of type families to type family
 definitions.
 
 \begin{code}
-type Signature = M.Map String FamilyDef
+type Signature = M.Map KindRef FamilyDef
 \end{code}
 
 \section{Inspecting for information}

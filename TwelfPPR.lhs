@@ -16,6 +16,9 @@
 \usepackage{fancyref}
 \usepackage{hyperref}
 \usepackage{url}
+\usepackage{amssymb}
+\usepackage{amsmath}
+\usepackage{listings}
 \renewcommand{\ttdefault}{txtt}
 \renewcommand{\rmdefault}{ugm}
 
@@ -79,17 +82,17 @@ ppr sig = newlines <$> liftM2 (++) prods infs
           prods = do 
             mapM_ (pprAsProd sig) . filter (prodRulePossible . snd) $ defs
             rules <- M.toList <$> getsGGenEnv prod_rules
-            return $ map (uncurry pprFam) rules
+            mapM (uncurry $ prettyProd sig) rules
           infs  = mapM (return . pprAsInf sig) . filter (not . prodRulePossible . snd) $ defs
 \end{code}
 
 \begin{code}
-pprAsInf :: Signature -> (String, FamilyDef) -> String
-pprAsInf _ (name, FamilyDef ms) = 
+pprAsInf :: Signature -> (KindRef, FamilyDef) -> String
+pprAsInf _ (KindRef name, FamilyDef ms) = 
     "[" ++ name ++ "]\n" ++ intercalate "\n" (map rule $ M.toList ms)
-    where rule (rname, t) = "  " ++ rule' t ++ "   [" ++ capitalise rname ++ "]"
-          rule' (TyApp k []) = capitalise k
-          rule' (TyApp k os) = capitalise k ++ "(" ++ args ++ ")"
+    where rule (TypeRef rname, t) = "  " ++ rule' t ++ "   [" ++ capitalise rname ++ "]"
+          rule' (TyApp (KindRef kn) []) = capitalise kn
+          rule' (TyApp (KindRef kn) os) = capitalise kn ++ "(" ++ args ++ ")"
               where args = intercalate "," . map prettyObject $ os
           rule' (TyArrow t1 t2) = rule' t1 ++ " => " ++ rule' t2
           rule' (TyCon _ _ t2) = rule' t2

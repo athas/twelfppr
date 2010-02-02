@@ -468,8 +468,9 @@ isFamDef t = conclusion t == TType
 
 toSignature :: [Decl] -> LF.Signature
 toSignature ds = M.fromList $ catMaybes $ map convert ds
-    where convert (DTerm s t) 
-              | isFamDef t = Just (s, buildFamily s ds)
+    where convert (DTerm s t)
+              | isFamDef t = Just ( LF.KindRef s
+                                  , buildFamily (LF.KindRef s) ds)
           convert _ = Nothing
 \end{code}
 
@@ -479,15 +480,16 @@ if its conclusion (see above) is in the type family.
 
 \begin{code}
 buildFamily :: LF.KindRef -> [Decl] -> LF.FamilyDef
-buildFamily s = LF.FamilyDef . M.fromList . map convert . catMaybes . map pick
-    where pick (DTerm name t) 
-              | ok (conclusion t) = Just (name, t)
+buildFamily k@(LF.KindRef s) =
+  LF.FamilyDef . M.fromList . map convert . catMaybes . map pick
+    where pick (DTerm tr t) 
+              | ok (conclusion t) = Just (LF.TypeRef tr, t)
           pick _ = Nothing
           ok (TApp t _)        = ok t
           ok (TConstant s2)    = s == s2
           ok (TAscription t _) = ok t
           ok _                 = False
-          convert (name, t)    = (name, toType s t)
+          convert (name, t)    = (name, toType k t)
 \end{code}
 
 Objects and types are merged in a single syntactical category in
@@ -517,16 +519,16 @@ as the kind named by the constant applied to zero arguments.
 \begin{code}
 toType _ (TApp t1 t2) = uncurry LF.TyApp $ handleApp t1 t2
     where handleApp (TVar name) t' = 
-              (name, [toObject t'])
+              (LF.KindRef name, [toObject t'])
           handleApp (TConstant name) t' =
-              (name, [toObject t'])
+              (LF.KindRef name, [toObject t'])
           handleApp (TApp funt argt) t =
               let (t', os) = handleApp funt argt
               in (t', os ++ [toObject t])
           handleApp _ _ =
               error "Type or kind name expected in term"
-toType _ (TConstant name) = LF.TyApp name []
-toType _ (TVar name)      = LF.TyApp name []
+toType _ (TConstant name) = LF.TyApp (LF.KindRef name) []
+toType _ (TVar name)      = LF.TyApp (LF.KindRef name) []
 \end{code}
 
 Type ascriptions are completely ignored: they have no semantic value.
@@ -552,9 +554,9 @@ ascriptions.
 
 \begin{code}
 toObject :: Term -> LF.Object
-toObject (TLambda (name, _) t) = LF.Lambda name (toObject t)
-toObject (TVar t)          = LF.Var t
-toObject (TConstant t)     = LF.Type t
+toObject (TLambda (name, _) t) = LF.Lambda (LF.TypeRef name) (toObject t)
+toObject (TVar t)          = LF.Var $ LF.TypeRef t
+toObject (TConstant t)     = LF.Type $ LF.TypeRef t
 toObject (TApp t1 t2)      = LF.App (toObject t1) (toObject t2)
 toObject (TAscription t _) = toObject t
 toObject THole             =

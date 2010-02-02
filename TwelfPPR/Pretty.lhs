@@ -17,9 +17,9 @@ import TwelfPPR.LF
 
 \begin{code}
 prettyObject :: Object -> String
-prettyObject (Type s) = s
-prettyObject (Var s)  = s
-prettyObject (Lambda t o) = "\\" ++ t ++ "." ++ prettyObject o
+prettyObject (Type (TypeRef s)) = s
+prettyObject (Var (TypeRef s))  = s
+prettyObject (Lambda (TypeRef t) o) = "\\" ++ t ++ "." ++ prettyObject o
 prettyObject (App o1 o2@(App _ _)) = 
     prettyObject o1 ++ " (" ++ prettyObject o2 ++ ")"
 prettyObject (App o1 o2) = prettyObject o1 ++ " " ++ prettyObject o2
