@@ -252,8 +252,7 @@ handlePremise c (TyArrow (TyApp kr []) t2) = (kr : krs, ku)
     where (krs, ku) = handlePremise (S.insert kr c) t2
 handlePremise _ (TyArrow _ _)  = error "Cannot handle greater than 2nd order HOAS"
 handlePremise c (TyCon _ _ t2) = handlePremise c t2  -- checkme
-handlePremise c (TyApp kr [])   = 
-  ([], (kr, c))
+handlePremise c (TyApp kr [])  = ([], (kr, c))
 handlePremise c (TyApp k os)   = undefined
 \end{code}
 

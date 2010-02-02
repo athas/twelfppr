@@ -554,13 +554,14 @@ ascriptions.
 
 \begin{code}
 toObject :: Term -> LF.Object
-toObject (TLambda (name, _) t) = LF.Lambda (LF.TypeRef name) (toObject t)
-toObject (TVar t)          = LF.Var $ LF.TypeRef t
+toObject (TLambda (name, _) t) = 
+  LF.Lambda (LF.ObjRef name) (toObject t)
+toObject (TVar t)          = LF.Var $ LF.ObjRef t
 toObject (TConstant t)     = LF.Type $ LF.TypeRef t
 toObject (TApp t1 t2)      = LF.App (toObject t1) (toObject t2)
 toObject (TAscription t _) = toObject t
 toObject THole             =
-    error "Cannot convert incomplete term to object"
+  error "Cannot convert incomplete term to object"
 toObject _                 =
-    error "Type found where object expected in term"
+  error "Type found where object expected in term"
 \end{code}
