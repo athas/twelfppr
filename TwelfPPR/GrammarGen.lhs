@@ -128,8 +128,7 @@ A type is printable as a production rule if its conclusion is a 0-arity kind.
 \begin{code}
 prodRulePossible :: FamilyDef -> Bool
 prodRulePossible (FamilyDef ms) = all check $ M.elems ms
-    where check (TyArrow _ t)       = check t
-          check (TyCon _ _ t)       = check t
+    where check (TyCon _ _ t)       = check t
           check (TyApp _ [])        = True
           check _                   = False
 \end{code}
@@ -254,10 +253,9 @@ typeSymbol c t = map (handlePremise c) $ premises t
 handlePremise :: FreeVarContext
               -> Type 
               -> ([KindRef], KindApp)
-handlePremise c (TyArrow (TyApp kr []) t2) = (kr : krs, ka)
-    where (krs, ka) = handlePremise (S.insert kr c) t2
-handlePremise _ (TyArrow _ _)  = error "Cannot handle greater than 2nd order HOAS"
-handlePremise c (TyCon _ _ t2) = handlePremise c t2  -- checkme
+handlePremise c (TyCon _ (TyApp kr []) t2) = (kr : krs, ka)
+    where (krs, ka) = handlePremise (S.insert kr c) t2 -- checkme
+handlePremise _ (TyCon _ _ _)  = error "Cannot handle greater than 2nd order HOAS"
 handlePremise c (TyApp kr os)  = ([], ((kr, c), os))
 \end{code}
 

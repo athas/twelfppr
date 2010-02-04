@@ -25,7 +25,8 @@ uses, especially considering the relatively small size of normal Twelf
 programs.
 
 \begin{code}
-module TwelfPPR.Parser ( Term(..)
+module TwelfPPR.Parser ( upcaseId
+                       , Term(..)
                        , Decl(..)
                        , DeclState(..)
                        , initDeclState
@@ -505,9 +506,9 @@ corresponding LF type.
 \begin{code}
 toType :: LF.KindRef -> Term -> LF.Type
 toType s (TArrow t1 t2) =
-  LF.TyArrow (toType s t1) (toType s t2)
+  LF.TyCon Nothing (toType s t1) (toType s t2)
 toType s (TSchem (name, t1) t2) = 
-  LF.TyCon name (toType s t1) (toType s t2)
+  LF.TyCon (Just name) (toType s t1) (toType s t2)
 \end{code}
 
 Application is slightly more complicated; the crux being that the

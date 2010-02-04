@@ -94,7 +94,7 @@ pprAsInf _ (KindRef name, FamilyDef ms) =
           rule' (TyApp (KindRef kn) []) = capitalise kn
           rule' (TyApp (KindRef kn) os) = capitalise kn ++ "(" ++ args ++ ")"
               where args = intercalate "," . map prettyObject $ os
-          rule' (TyArrow t1 t2) = rule' t1 ++ " => " ++ rule' t2
+          rule' (TyCon Nothing t1 t2) = rule' t1 ++ " => " ++ rule' t2
           rule' (TyCon _ _ t2) = rule' t2
 \end{code}
 

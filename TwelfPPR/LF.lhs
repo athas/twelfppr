@@ -44,18 +44,15 @@ newtype KindRef = KindRef String
 newtype TypeRef = TypeRef String
     deriving (Show, Eq, Ord)
 
-data Type = TyArrow Type Type
-          | TyCon String Type Type
+data Type = TyCon (Maybe String) Type Type
           | TyApp KindRef [Object]
             deriving (Show, Eq)
 
 conclusion :: Type -> KindRef
-conclusion (TyArrow _ t2) = conclusion t2
 conclusion (TyCon _ _ t2) = conclusion t2
 conclusion (TyApp t _)    = t
 
 premises :: Type -> [Type]
-premises (TyArrow t1 t2) = t1 : premises t2
 premises (TyCon _ t1 t2) = t1 : premises t2
 premises _               = []
 \end{code}
@@ -95,7 +92,6 @@ can trivially walk through the tree.
 
 \begin{code}
 refsInType :: Type -> S.Set KindRef
-refsInType (TyArrow t1 t2) = refsInType t1 `S.union` refsInType t2
 refsInType (TyCon _ t1 t2) = refsInType t1 `S.union` refsInType t2
 refsInType (TyApp k _)     = S.singleton k
 \end{code}
