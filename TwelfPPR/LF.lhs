@@ -24,7 +24,6 @@ module TwelfPPR.LF ( KindRef(..)
                    , Type(..)
                    , conclusion
                    , premises
-                   , ObjRef(..)
                    , Object(..)
                    , FamilyDef(..)
                    , Signature
@@ -65,12 +64,8 @@ premises _               = []
 in $\beta$ normal form, and fully constructed. 
 
 \begin{code}
-newtype ObjRef = ObjRef String
-    deriving (Show, Eq, Ord)
-
 data Object = Type TypeRef
-            | Var ObjRef
-            | Lambda ObjRef Object
+            | Lambda TypeRef Object
             | App Object Object
               deriving (Show, Eq)
 \end{code}

@@ -555,8 +555,8 @@ ascriptions.
 \begin{code}
 toObject :: Term -> LF.Object
 toObject (TLambda (name, _) t) = 
-  LF.Lambda (LF.ObjRef name) (toObject t)
-toObject (TVar t)          = LF.Var $ LF.ObjRef t
+  LF.Lambda (LF.TypeRef name) (toObject t)
+toObject (TVar t)          = LF.Type $ LF.TypeRef t
 toObject (TConstant t)     = LF.Type $ LF.TypeRef t
 toObject (TApp t1 t2)      = LF.App (toObject t1) (toObject t2)
 toObject (TAscription t _) = toObject t
