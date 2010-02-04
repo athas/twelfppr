@@ -91,8 +91,9 @@ variables in subterms.
 \begin{code}
 type FreeVarContext = S.Set KindRef
 type KindUsage = (KindRef, FreeVarContext)
+type KindApp = (KindUsage, [Object])
 type ProdRule = (M.Map TypeRef RuleSymbol, Bool)
-type RuleSymbol = [([KindRef], KindUsage)]
+type RuleSymbol = [([KindRef], KindApp)]
 \end{code}
 
 \begin{code}
@@ -128,6 +129,7 @@ A type is printable as a production rule if its conclusion is a 0-arity kind.
 prodRulePossible :: FamilyDef -> Bool
 prodRulePossible (FamilyDef ms) = all check $ M.elems ms
     where check (TyArrow _ t)       = check t
+          check (TyCon _ _ t)       = check t
           check (TyApp _ [])        = True
           check _                   = False
 \end{code}
@@ -166,7 +168,7 @@ ensureProds sig (syms, _) =
         modifyGGenEnv $ \s ->
           s { prod_rules = M.insert (kr, c') prod (prod_rules s) }
         ensureProds sig prod
-    where krs = concat . map (map snd) . M.elems
+    where krs = concat . map (map $ fst . snd) . M.elems
 
 pprWithContext :: FreeVarContext
                -> (KindRef, FamilyDef)
@@ -198,13 +200,17 @@ prettySymbol _ (TypeRef tn, []) = return $ capitalise tn
 prettySymbol sig (TypeRef tn, ts) = do
   args <- liftM (intercalate ", ") $ mapM prettyPremise ts
   return $ capitalise tn ++ "(" ++ args ++ ")"
-      where prettyPremise :: MonadGGen m => ([KindRef], KindUsage) 
+      where prettyPremise :: MonadGGen m => ([KindRef], KindApp) 
                           -> m String
-            prettyPremise ([], ku) = do
+            prettyPremise ([], (ku, [])) = do
               name <- namer sig ku
               return $ capitalise name
-            prettyPremise (KindRef kn:tms, ku) = do
-              more <- prettyPremise (tms, ku)
+            prettyPremise ([], (ku, os)) = do
+              name <- namer sig ku
+              return $ capitalise name ++ "(" ++ args ++ ")"
+                  where args = intercalate ", " $ map prettyObject os
+            prettyPremise (KindRef kn:tms, ka) = do
+              more <- prettyPremise (tms, ka)
               return (("$" ++ capitalise kn ++ ".") ++ more)
 \end{code}
 
@@ -228,11 +234,11 @@ namer sig (kr@(KindRef kn), vs) = do
               M.insert kr (M.singleton vs new) context }
       return new
     where newName existing
-             | vs == init = capitalise kn
+             | vs == c = capitalise kn
              | otherwise = capitalise kn ++ replicate n '\''
-             where n = 1 + M.size (M.filterWithKey (\k _ -> k/=init) existing)
-          init = initContext kr fd
-          fd  = fromJust $ M.lookup kr sig
+             where n = 1 + M.size (M.filterWithKey (\k _ -> k/=c) existing)
+          c  = initContext kr fd
+          fd = fromJust $ M.lookup kr sig
 \end{code}
 
 A term without premises is printed as its capitalised name, otherwise
@@ -247,13 +253,12 @@ typeSymbol c t = map (handlePremise c) $ premises t
 
 handlePremise :: FreeVarContext
               -> Type 
-              -> ([KindRef], KindUsage)
-handlePremise c (TyArrow (TyApp kr []) t2) = (kr : krs, ku)
-    where (krs, ku) = handlePremise (S.insert kr c) t2
+              -> ([KindRef], KindApp)
+handlePremise c (TyArrow (TyApp kr []) t2) = (kr : krs, ka)
+    where (krs, ka) = handlePremise (S.insert kr c) t2
 handlePremise _ (TyArrow _ _)  = error "Cannot handle greater than 2nd order HOAS"
 handlePremise c (TyCon _ _ t2) = handlePremise c t2  -- checkme
-handlePremise c (TyApp kr [])  = ([], (kr, c))
-handlePremise c (TyApp k os)   = undefined
+handlePremise c (TyApp kr os)  = ([], ((kr, c), os))
 \end{code}
 
 A constant premise is its capitalised name, just like a constant type.
