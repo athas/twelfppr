@@ -87,8 +87,8 @@ ppr sig = newlines <$> liftM2 (++) prods infs
 \end{code}
 
 \begin{code}
-pprAsInf :: Signature -> (KindRef, FamilyDef) -> String
-pprAsInf _ (KindRef name, FamilyDef ms) = 
+pprAsInf :: Signature -> (KindRef, KindDef) -> String
+pprAsInf _ (KindRef name, KindDef ms) = 
     "[" ++ name ++ "]\n" ++ intercalate "\n" (map rule $ M.toList ms)
     where rule (TypeRef rname, t) = "  " ++ rule' t ++ "   [" ++ capitalise rname ++ "]"
           rule' (TyApp (KindRef kn) []) = capitalise kn

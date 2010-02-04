@@ -44,6 +44,7 @@ import Data.List
 import qualified Data.Map as M
 import Data.Maybe
 import Data.Ord
+import qualified Data.Set as S
 
 import Text.Parsec hiding ((<|>), many, optional)
 import Text.Parsec.String
@@ -480,9 +481,9 @@ type family that we are interested in.  A term definition is eligible
 if its conclusion (see above) is in the type family.
 
 \begin{code}
-buildFamily :: LF.KindRef -> [Decl] -> LF.FamilyDef
+buildFamily :: LF.KindRef -> [Decl] -> LF.KindDef
 buildFamily k@(LF.KindRef s) =
-  LF.FamilyDef . M.fromList . map convert . catMaybes . map pick
+  LF.KindDef . M.fromList . map convert . catMaybes . map pick
     where pick (DTerm tr t) 
               | ok (conclusion t) = Just (LF.TypeRef tr, t)
           pick _ = Nothing
@@ -490,7 +491,7 @@ buildFamily k@(LF.KindRef s) =
           ok (TConstant s2)    = s == s2
           ok (TAscription t _) = ok t
           ok _                 = False
-          convert (name, t)    = (name, toType k t)
+          convert (name, t)    = (name, toType S.empty k t)
 \end{code}
 
 Objects and types are merged in a single syntactical category in
@@ -498,17 +499,25 @@ Twelf, but they are distinct concepts in LF type theory.  Hence, we
 define two different conversion functions, based on whether we expect
 a type or an object in some position.  This means that, for instance,
 a |TApp| is interpreted differently based on whether it is in a type
-or object context.
+or object context.  Additionally, we keep track of variables bound by
+$\lambda$- and $\Pi$-abstraction, so we can determine whether a given
+name is a constant or a variable, rather than relying solely on case.
+This is necessary as there is no requirement on the case of variables
+in explicit bindings, and as we deal with fully reconstructed terms,
+there should be no implicit variables at all.
 
 Arrows and $\Pi$-constructs are trivially converted to the
-corresponding LF type.
+corresponding LF type.  Note that an arrow in Twelf is just a
+syntactic shortcut for a $\Pi$ constructor in which the variable is
+not free in the enclosed term.
 
 \begin{code}
-toType :: LF.KindRef -> Term -> LF.Type
-toType s (TArrow t1 t2) =
-  LF.TyCon Nothing (toType s t1) (toType s t2)
-toType s (TSchem (name, t1) t2) = 
-  LF.TyCon (Just name) (toType s t1) (toType s t2)
+toType :: S.Set String -> LF.KindRef -> Term -> LF.Type
+toType vs s (TArrow t1 t2) =
+  LF.TyCon Nothing (toType vs s t1) (toType vs s t2)
+toType vs s (TSchem (name, t1) t2) = 
+  LF.TyCon (Just name) (toType vs s t1) (toType vs' s t2)
+      where vs' = name `S.insert` vs
 \end{code}
 
 Application is slightly more complicated; the crux being that the
@@ -518,24 +527,24 @@ to a sequence of objects.  We treat a constant or variable by itself
 as the kind named by the constant applied to zero arguments.
 
 \begin{code}
-toType _ (TApp t1 t2) = uncurry LF.TyApp $ handleApp t1 t2
+toType vs _ (TApp t1 t2) = uncurry LF.TyApp $ handleApp t1 t2
     where handleApp (TVar name) t' = 
-              (LF.KindRef name, [toObject t'])
+              (LF.KindRef name, [toObject vs t'])
           handleApp (TConstant name) t' =
-              (LF.KindRef name, [toObject t'])
+              (LF.KindRef name, [toObject vs t'])
           handleApp (TApp funt argt) t =
               let (t', os) = handleApp funt argt
-              in (t', os ++ [toObject t])
+              in (t', os ++ [toObject vs t])
           handleApp _ _ =
               error "Type or kind name expected in term"
-toType _ (TConstant name) = LF.TyApp (LF.KindRef name) []
-toType _ (TVar name)      = LF.TyApp (LF.KindRef name) []
+toType _ _ (TConstant name) = LF.TyApp (LF.KindRef name) []
+toType _ _ (TVar name)      = LF.TyApp (LF.KindRef name) []
 \end{code}
 
 Type ascriptions are completely ignored: they have no semantic value.
 
 \begin{code}
-toType s (TAscription t _) = toType s t
+toType vs s (TAscription t _) = toType vs s t
 \end{code}
 
 The constant \texttt{type} is not permitted in types, only in type
@@ -544,9 +553,9 @@ type reconstruction should be performed to remove them.  Finally,
 lambda bindings is only permitted in objects.
 
 \begin{code}
-toType _ TType = error "'type' found where actual type expected in term"
-toType _ THole    = error "Cannot convert incomplete term to object"
-toType _ (TLambda _ _) = 
+toType _ _ TType = error "'type' found where actual type expected in term"
+toType _ _ THole    = error "Cannot convert incomplete term to object"
+toType _ _ (TLambda _ _) = 
     error "Object found where type or kind expected in term"
 \end{code}
 
@@ -554,15 +563,21 @@ Converting terms to objects is trivial.  Again, we ignore any type
 ascriptions.
 
 \begin{code}
-toObject :: Term -> LF.Object
-toObject (TLambda (name, _) t) = 
-  LF.Lambda (LF.TypeRef name) (toObject t)
-toObject (TVar t)          = LF.Type $ LF.TypeRef t
-toObject (TConstant t)     = LF.Type $ LF.TypeRef t
-toObject (TApp t1 t2)      = LF.App (toObject t1) (toObject t2)
-toObject (TAscription t _) = toObject t
-toObject THole             =
+toObject :: S.Set String -> Term -> LF.Object
+toObject vs (TLambda (name, _) t) = 
+  LF.Lambda (LF.TypeRef name) (toObject vs' t)
+      where vs' = name `S.insert` vs
+toObject vs (TVar t)
+    | t `S.member` vs = LF.Var $ LF.TypeRef t
+    | otherwise       = LF.Const $ LF.TypeRef t
+toObject vs (TConstant t)
+    | t `S.member` vs = LF.Var $ LF.TypeRef t
+    | otherwise       = LF.Const $ LF.TypeRef t
+toObject vs (TApp t1 t2)      =
+  LF.App (toObject vs t1) (toObject  vs t2)
+toObject vs (TAscription t _) = toObject vs t
+toObject _ THole              =
   error "Cannot convert incomplete term to object"
-toObject _                 =
+toObject _ _                  =
   error "Type found where object expected in term"
 \end{code}

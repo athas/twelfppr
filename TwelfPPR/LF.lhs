@@ -25,7 +25,7 @@ module TwelfPPR.LF ( KindRef(..)
                    , conclusion
                    , premises
                    , Object(..)
-                   , FamilyDef(..)
+                   , KindDef(..)
                    , Signature
                    , referencedKinds )
     where
@@ -57,29 +57,32 @@ premises (TyCon _ t1 t2) = t1 : premises t2
 premises _               = []
 \end{code}
 
-|Object|s are a simple subset of full Twelf objects.  They are closed,
-in $\beta$ normal form, and fully constructed. 
+LF |Object|s should always be in $\beta$ normal form, though that
+restriction is not enforced by this definition.  We distinguish
+between referencing types that are part of some top-level constant
+definition in the signature (the |Const| constructor) and those that
+are type variables in the enclosing term (|Var|).
 
 \begin{code}
-data Object = Type TypeRef
+data Object = Const TypeRef
+            | Var TypeRef
             | Lambda TypeRef Object
             | App Object Object
               deriving (Show, Eq)
 \end{code}
 
-A type family definition maps names of terms of the premises to the
-actual terms themselves.
+A kind definition maps type names to the actual types (or
+specifically, type families) themselves.
 
 \begin{code}
-data FamilyDef = FamilyDef (M.Map TypeRef Type)
+data KindDef = KindDef (M.Map TypeRef Type)
                    deriving (Show, Eq)
 \end{code}
 
-A Twelf signature is a map of names of type families to type family
-definitions.
+A Twelf signature is a map of names of kind names to kind definitions.
 
 \begin{code}
-type Signature = M.Map KindRef FamilyDef
+type Signature = M.Map KindRef KindDef
 \end{code}
 
 \section{Inspecting for information}
@@ -100,8 +103,8 @@ The kind applications of some type family definition is the union of
 all kind applications in the member types.
 
 \begin{code}
-refsInTyFam :: FamilyDef -> S.Set KindRef
-refsInTyFam (FamilyDef fam) = 
+refsInTyFam :: KindDef -> S.Set KindRef
+refsInTyFam (KindDef fam) = 
   foldl S.union S.empty $ map refsInType $ M.elems fam
 \end{code}
 

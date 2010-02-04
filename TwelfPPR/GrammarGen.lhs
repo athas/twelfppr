@@ -126,8 +126,8 @@ instance MonadState GGenEnv m => MonadGGen m where
 A type is printable as a production rule if its conclusion is a 0-arity kind.
 
 \begin{code}
-prodRulePossible :: FamilyDef -> Bool
-prodRulePossible (FamilyDef ms) = all check $ M.elems ms
+prodRulePossible :: KindDef -> Bool
+prodRulePossible (KindDef ms) = all check $ M.elems ms
     where check (TyCon _ _ t)       = check t
           check (TyApp _ [])        = True
           check _                   = False
@@ -141,7 +141,7 @@ generated.
 
 \begin{code}
 pprAsProd :: MonadGGen m => Signature
-          -> (KindRef, FamilyDef)
+          -> (KindRef, KindDef)
           -> m ()
 pprAsProd sig x@(kr, fd) = do
   let prod = pprWithContext c x
@@ -170,10 +170,10 @@ ensureProds sig (syms, _) =
     where krs = concat . map (map $ fst . snd) . M.elems
 
 pprWithContext :: FreeVarContext
-               -> (KindRef, FamilyDef)
+               -> (KindRef, KindDef)
                -> ProdRule
-pprWithContext c (kr, FamilyDef ms) = 
-  (syms, kr `S.member` c && (hasVar kr $ FamilyDef ms))
+pprWithContext c (kr, KindDef ms) = 
+  (syms, kr `S.member` c && (hasVar kr $ KindDef ms))
     where syms = M.map (typeSymbol c) ms
 \end{code}
 
@@ -269,12 +269,12 @@ For each parametric premise we create a symbol for variables of the
 type families used as parameters in the premise.
 
 \begin{code}
-hasVar :: KindRef -> FamilyDef -> Bool
-hasVar kr (FamilyDef fam) = any (typeHasVar) $ M.elems fam
+hasVar :: KindRef -> KindDef -> Bool
+hasVar kr (KindDef fam) = any (typeHasVar) $ M.elems fam
     where typeHasVar    = any premiseHasVar . premises 
           premiseHasVar = isJust . find (==TyApp kr []) . premises
 
-initContext :: KindRef -> FamilyDef -> FreeVarContext
+initContext :: KindRef -> KindDef -> FreeVarContext
 initContext kr fd
     | hasVar kr fd = S.singleton kr
     | otherwise = S.empty
