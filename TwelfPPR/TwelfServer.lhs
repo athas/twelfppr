@@ -32,6 +32,7 @@ import Control.Monad.Reader
 
 import Data.List
 
+import System.Exit
 import System.IO hiding (stdin, stdout)
 import System.Process hiding (proc)
 \end{code}
@@ -89,7 +90,7 @@ runTwelfCmd cmd = do
   liftIO $ liftM (intercalate "\n") getresp
 \end{code}
 
-The final bit of needed plumbing is the function for actually starting
+The final bit of plumbing needed is the function for actually starting
 the Twelf server, running the |TwelfMonadT| action, and shutting down
 Twelf again.  The only subtle bit is that we run an \textit{empty}
 Twelf command first: this is because the server, upon starting up,
@@ -98,8 +99,8 @@ on standard output; executing an empty command (which is ignored by
 Twelf) is a simple way to read past this.
 
 \begin{code}
-withTwelfServer :: MonadIO m => TwelfMonadT m a -> m a
-withTwelfServer m = do
+withTwelfServer :: MonadIO m => String -> TwelfMonadT m a -> m a
+withTwelfServer bin m = do
   (Just stdin, Just stdout, _, proc) <- 
       liftIO $ createProcess $ CreateProcess
         { cmdspec   = RawCommand bin []
@@ -109,6 +110,11 @@ withTwelfServer m = do
         , std_out   = CreatePipe
         , std_err   = CreatePipe
         , close_fds = True }
+  code <- liftIO $ getProcessExitCode proc
+  case code of
+    Just (ExitFailure e) ->
+      error $ "cannot start " ++ bin ++ ": error " ++ show e
+    _ -> return ()
   liftIO $ hSetBuffering stdin NoBuffering
   v <- runReaderT m' $ 
        TwelfProc { twelfStdin  = stdin
@@ -116,6 +122,5 @@ withTwelfServer m = do
                  , twelfProc   = proc }
   liftIO $ terminateProcess proc
   return v
-      where bin = "/home/athas/twelf/bin/twelf-server"
-            TwelfMonadT m' = runTwelfCmd "" >> m
+      where TwelfMonadT m' = runTwelfCmd "" >> m
 \end{code}

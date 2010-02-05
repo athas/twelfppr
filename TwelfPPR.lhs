@@ -113,7 +113,8 @@ main = do [cfg] <- getArgs
           either print (proc cfg) $ parseConfig cfg str
     where proc cfg = (=<<) (either print rprint)
                      . procCfg initDeclState cfg
-          rprint s = test =<< toSignature <$> reconstruct s
+          rprint s = test =<< toSignature <$> reconstruct' s
+          reconstruct' = reconstruct "/home/athas/twelf/bin/twelf-server"
           procCfg _ _   []     = return $ Right []
           procCfg s cfg (f:fs) = do
             str <- readFile $ replaceFileName cfg f

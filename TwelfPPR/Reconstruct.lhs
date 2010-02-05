@@ -55,8 +55,8 @@ only pass term and abbreviation definitions to the |readDecl| command,
 as it makes no sense to reconstruct the others.
 
 \begin{code}
-reconstruct :: MonadIO m => [Decl] -> m [Decl]
-reconstruct = withTwelfServer . mapM reconstruct'
+reconstruct :: MonadIO m => String -> [Decl] -> m [Decl]
+reconstruct bin = withTwelfServer bin . mapM reconstruct'
     where reconstruct' :: MonadIO m => Decl -> TwelfMonadT m Decl
           reconstruct' d@(DTerm _ _)         = reconstructDecl d
           reconstruct' d@(DDefinition _ _ _) = reconstructDecl d
