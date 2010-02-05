@@ -40,15 +40,17 @@ The full LF type theory is defined by the following grammar.
 Kinds & $K$ & ::= & $\text{type} \mid \Pi x:A.K$ \\
 Families & $A$ & ::= & $a \mid A\ M \mid \Pi x:A_1.A_2$ \\
 Objects & $M$ & ::= & $c \mid x \mid \lambda x:A. M \mid M_1\ M_2$ \\
-Signatures & $\Sigma$ & ::= & $\cdot \mid \Sigma, a:K \mid \Sigma, c:A$
-Contexts & $\Gamma$ & ::= $\cdot \mid \Gamma, x:A$
+Signatures & $\Sigma$ & ::= & $\cdot \mid \Sigma, a:K \mid \Sigma,
+c:A$ \\
+Contexts & $\Gamma$ & ::= & $\cdot \mid \Gamma, x:A$
 \end{tabular}
 \\
 
 We ignore contexts, they do not matter for our purposes.  A $c$ is the
 name of a type constant, and an $x$ is the name of a type variable.
 An $a$ is the name of a kind.  This leads us to the following
-definition of types.
+definition of types.  We define disjunct types for naming kinds and
+types for increased type safety.
 
 \begin{code}
 newtype KindRef = KindRef String
