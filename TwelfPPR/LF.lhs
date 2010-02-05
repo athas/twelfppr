@@ -34,9 +34,21 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 \end{code}
 
-A type $t_1 \rightarrow t_2 \ldots t_n$ is said to have the
-\textit{premises} $t_1, t_2 \ldots t_{n-1}$ and the
-\textit{conclusion} $t_n$.
+The full LF type theory is defined by the following grammar.
+\\
+\begin{tabular}{lrcl}
+Kinds & $K$ & ::= & $\text{type} \mid \Pi x:A.K$ \\
+Families & $A$ & ::= & $a \mid A\ M \mid \Pi x:A_1.A_2$ \\
+Objects & $M$ & ::= & $c \mid x \mid \lambda x:A. M \mid M_1\ M_2$ \\
+Signatures & $\Sigma$ & ::= & $\cdot \mid \Sigma, a:K \mid \Sigma, c:A$
+Contexts & $\Gamma$ & ::= $\cdot \mid \Gamma, x:A$
+\end{tabular}
+\\
+
+We ignore contexts, they do not matter for our purposes.  A $c$ is the
+name of a type constant, and an $x$ is the name of a type variable.
+An $a$ is the name of a kind.  This leads us to the following
+definition of types.
 
 \begin{code}
 newtype KindRef = KindRef String
@@ -45,12 +57,21 @@ newtype TypeRef = TypeRef String
     deriving (Show, Eq, Ord)
 
 data Type = TyCon (Maybe String) Type Type
-          | TyApp KindRef [Object]
+          | TyApp Type Object
+          | TyKind KindRef
             deriving (Show, Eq)
+\end{code}
 
-conclusion :: Type -> KindRef
+A type $\Pi x_1 : A_1. \Pi x_2 : A_2.\ldots \Pi x_{n-1} : A_{n-1}.A_n$
+is said to have the \textit{premises} $A_1, A_2 \ldots A_{n-1}$ and
+the \textit{conclusion} $A_n$.  This is a bit of a stretch, as this
+terminology is usually reserved for cases when $x_i$ is not free in
+the enclosed term, but useful none the less.
+
+\begin{code}
+conclusion :: Type -> Type
 conclusion (TyCon _ _ t2) = conclusion t2
-conclusion (TyApp t _)    = t
+conclusion t              = t
 
 premises :: Type -> [Type]
 premises (TyCon _ t1 t2) = t1 : premises t2
@@ -85,7 +106,7 @@ A Twelf signature is a map of names of kind names to kind definitions.
 type Signature = M.Map KindRef KindDef
 \end{code}
 
-\section{Inspecting for information}
+\section{Inspecting signatures}
 
 We will eventually need to extract various interesting nuggets of
 information about LF definitions.
@@ -96,7 +117,8 @@ can trivially walk through the tree.
 \begin{code}
 refsInType :: Type -> S.Set KindRef
 refsInType (TyCon _ t1 t2) = refsInType t1 `S.union` refsInType t2
-refsInType (TyApp k _)     = S.singleton k
+refsInType (TyApp t _)     = refsInType t
+refsInType (TyKind k)      = S.singleton k
 \end{code}
 
 The kind applications of some type family definition is the union of

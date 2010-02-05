@@ -129,7 +129,7 @@ A type is printable as a production rule if its conclusion is a 0-arity kind.
 prodRulePossible :: KindDef -> Bool
 prodRulePossible (KindDef ms) = all check $ M.elems ms
     where check (TyCon _ _ t)       = check t
-          check (TyApp _ [])        = True
+          check (TyKind _)          = True
           check _                   = False
 \end{code}
 
@@ -247,16 +247,20 @@ it is printed as its name applied to a tuple containing its premises.
 typeSymbol :: FreeVarContext
            -> Type
            -> RuleSymbol
-typeSymbol _ (TyApp _ []) = []
+typeSymbol _ (TyKind _) = []
 typeSymbol c t = map (handlePremise c) $ premises t
 
 handlePremise :: FreeVarContext
               -> Type 
               -> ([KindRef], KindApp)
-handlePremise c (TyCon _ (TyApp kr []) t2) = (kr : krs, ka)
+handlePremise c (TyCon _ (TyKind kr) t2) = (kr : krs, ka)
     where (krs, ka) = handlePremise (S.insert kr c) t2 -- checkme
 handlePremise _ (TyCon _ _ _)  = error "Cannot handle greater than 2nd order HOAS"
-handlePremise c (TyApp kr os)  = ([], ((kr, c), os))
+handlePremise c (TyKind kr)    = ([], ((kr, c), []))
+handlePremise c (TyApp t o)    = ([], descend t [o])
+    where descend (TyKind kr) os   = ((kr, c), os)
+          descend (TyApp t' o') os = descend t' (o':os)
+          descend _ _ = error "Cannot handle embedded constructors in premises"
 \end{code}
 
 A constant premise is its capitalised name, just like a constant type.
@@ -272,7 +276,7 @@ type families used as parameters in the premise.
 hasVar :: KindRef -> KindDef -> Bool
 hasVar kr (KindDef fam) = any (typeHasVar) $ M.elems fam
     where typeHasVar    = any premiseHasVar . premises 
-          premiseHasVar = isJust . find (==TyApp kr []) . premises
+          premiseHasVar = isJust . find (==TyKind kr) . premises
 
 initContext :: KindRef -> KindDef -> FreeVarContext
 initContext kr fd

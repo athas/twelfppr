@@ -91,9 +91,13 @@ pprAsInf :: Signature -> (KindRef, KindDef) -> String
 pprAsInf _ (KindRef name, KindDef ms) = 
     "[" ++ name ++ "]\n" ++ intercalate "\n" (map rule $ M.toList ms)
     where rule (TypeRef rname, t) = "  " ++ rule' t ++ "   [" ++ capitalise rname ++ "]"
-          rule' (TyApp (KindRef kn) []) = capitalise kn
-          rule' (TyApp (KindRef kn) os) = capitalise kn ++ "(" ++ args ++ ")"
-              where args = intercalate "," . map prettyObject $ os
+          rule' (TyKind (KindRef kn))   = capitalise kn
+          rule' (TyApp t o) = descend t [o]
+              where descend (TyKind (KindRef kn)) os = 
+                      capitalise kn ++ "(" ++ args os ++ ")"
+                    descend (TyApp t' o') os = descend t' (o':os)
+                    descend _ _ = error "Cannot handle embedded constructors in premises"
+                    args = intercalate "," . map prettyObject
           rule' (TyCon Nothing t1 t2) = rule' t1 ++ " => " ++ rule' t2
           rule' (TyCon _ _ t2) = rule' t2
 \end{code}

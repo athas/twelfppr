@@ -520,25 +520,15 @@ toType vs s (TSchem (name, t1) t2) =
       where vs' = name `S.insert` vs
 \end{code}
 
-Application is slightly more complicated; the crux being that the
-Twelf syntax permits curried application of arbitrary terms, while the
-LF level of types encodes a fixed application of a type or kind name
-to a sequence of objects.  We treat a constant or variable by itself
-as the kind named by the constant applied to zero arguments.
+Application is quite simple too, the |TApp|s in the Twelf syntax
+correspond exactly to the |TyApp|s at the LF level.  We treat a
+constant or variable by itself as the kind named by the constant
+applied to zero arguments.
 
 \begin{code}
-toType vs _ (TApp t1 t2) = uncurry LF.TyApp $ handleApp t1 t2
-    where handleApp (TVar name) t' = 
-              (LF.KindRef name, [toObject vs t'])
-          handleApp (TConstant name) t' =
-              (LF.KindRef name, [toObject vs t'])
-          handleApp (TApp funt argt) t =
-              let (t', os) = handleApp funt argt
-              in (t', os ++ [toObject vs t])
-          handleApp _ _ =
-              error "Type or kind name expected in term"
-toType _ _ (TConstant name) = LF.TyApp (LF.KindRef name) []
-toType _ _ (TVar name)      = LF.TyApp (LF.KindRef name) []
+toType vs s (TApp t1 t2) = LF.TyApp (toType vs s t1) (toObject vs t2)
+toType _ _ (TConstant name) = LF.TyKind (LF.KindRef name)
+toType _ _ (TVar name)      = LF.TyKind (LF.KindRef name)
 \end{code}
 
 Type ascriptions are completely ignored: they have no semantic value.
