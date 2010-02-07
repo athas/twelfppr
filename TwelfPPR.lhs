@@ -54,20 +54,35 @@ import qualified Data.Map as M
 import System.Environment
 import System.FilePath
 
+import TwelfPPR.InfGen
 import TwelfPPR.LF
 import TwelfPPR.GrammarGen
 import TwelfPPR.Parser
 import TwelfPPR.Pretty
 import TwelfPPR.Reconstruct
-import TwelfPPR.Util
 \end{code}
 
 \begin{code}
-newtype PPR a = PPR (StateT GGenEnv Identity a)
-              deriving (Functor, Monad, MonadState GGenEnv)
+data PPREnv = PPREnv { gGenEnv   :: GGenEnv
+                     , printEnv  :: PrintEnv }
+
+emptyPPREnv :: PPREnv
+emptyPPREnv = PPREnv { gGenEnv  = emptyGGenEnv
+                     , printEnv = emptyPrintEnv }
+
+newtype PPR a = PPR (StateT PPREnv Identity a)
+              deriving (Functor, Monad, MonadState PPREnv)
+
+instance MonadGGen PPR where
+    getGGenEnv = gets gGenEnv
+    putGGenEnv ge = modify $ \e -> e { gGenEnv = ge }
+
+instance MonadPrint PPR where
+    getPrintEnv = gets printEnv
+    putPrintEnv pe = modify $ \e -> e { printEnv = pe }
 
 runPPR :: PPR a -> a
-runPPR (PPR m) = runIdentity $ evalStateT m emptyGGenEnv
+runPPR (PPR m) = runIdentity $ evalStateT m emptyPPREnv
 \end{code}
 
 Prettyprinting a signature consists of prettyprinting each type family
@@ -83,23 +98,9 @@ ppr sig = newlines <$> liftM2 (++) prods infs
             mapM_ (pprAsProd sig) . filter (prodRulePossible . snd) $ defs
             rules <- M.toList <$> getsGGenEnv prod_rules
             mapM (uncurry $ prettyProd sig) rules
-          infs  = mapM (return . pprAsInf sig) . filter (not . prodRulePossible . snd) $ defs
-\end{code}
-
-\begin{code}
-pprAsInf :: Signature -> (KindRef, KindDef) -> String
-pprAsInf _ (KindRef name, KindDef ms) = 
-    "[" ++ name ++ "]\n" ++ intercalate "\n" (map rule $ M.toList ms)
-    where rule (TypeRef rname, t) = "  " ++ rule' t ++ "   [" ++ capitalise rname ++ "]"
-          rule' (TyKind (KindRef kn))   = capitalise kn
-          rule' (TyApp t o) = descend t [o]
-              where descend (TyKind (KindRef kn)) os = 
-                      capitalise kn ++ "(" ++ args os ++ ")"
-                    descend (TyApp t' o') os = descend t' (o':os)
-                    descend _ _ = error "Cannot handle embedded constructors in premises"
-                    args = intercalate "," . map prettyObject
-          rule' (TyCon Nothing t1 t2) = rule' t1 ++ " => " ++ rule' t2
-          rule' (TyCon _ _ t2) = rule' t2
+          infs  = mapM judge nonprods
+          nonprods = filter (not . prodRulePossible . snd) $ defs
+          judge = (return . prettyJudgement . pprAsJudgement)
 \end{code}
 
 \begin{ignore}
@@ -109,7 +110,7 @@ test sig = putStrLn $ runPPR $ ppr sig
 
 main :: IO ()
 main = do [cfg] <- getArgs
-          str    <- readFile cfg
+          str   <- readFile cfg
           either print (proc cfg) $ parseConfig cfg str
     where proc cfg = (=<<) (either print rprint)
                      . procCfg initDeclState cfg
@@ -128,6 +129,7 @@ main = do [cfg] <- getArgs
 %include TwelfPPR/LF.lhs
 %include TwelfPPR/Pretty.lhs
 %include TwelfPPR/GrammarGen.lhs
+%include TwelfPPR/InfGen.lhs
 %include TwelfPPR/Parser.lhs
 %include TwelfPPR/TwelfServer.lhs
 %include TwelfPPR/Reconstruct.lhs

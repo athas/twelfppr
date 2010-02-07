@@ -25,24 +25,23 @@ rules.
 module TwelfPPR.GrammarGen ( GGenEnv(..)
                            , emptyGGenEnv
                            , MonadGGen(..)
+                           , FreeVarContext
                            , KindUsage
+                           , KindApp
                            , ProdRule
                            , RuleSymbol
                            , prodRulePossible
                            , pprAsProd
                            , pprWithContext
-                           , prettyProd
-) where
+                           , initContext
+                           ) where
 import Control.Monad.State
-import Data.Char
 import Data.List
 import qualified Data.Map as M
 import Data.Maybe
 import qualified Data.Set as S
 
 import TwelfPPR.LF
-import TwelfPPR.Pretty
-import TwelfPPR.Util
 \end{code}
 
 Consider the following simple Twelf signature.
@@ -89,23 +88,20 @@ in the type definitions, but also which kinds can appear as free
 variables in subterms.
 
 \begin{code}
-type FreeVarContext = S.Set KindRef
-type KindUsage = (KindRef, FreeVarContext)
-type KindApp = (KindUsage, [Object])
 type ProdRule = (M.Map TypeRef RuleSymbol, Bool)
 type RuleSymbol = [([KindRef], KindApp)]
+type KindApp = (KindUsage, [Object])
+type KindUsage = (KindRef, FreeVarContext)
+type FreeVarContext = S.Set KindRef
 \end{code}
 
 \begin{code}
-type NameContext = M.Map KindRef (M.Map FreeVarContext String)
 data GGenEnv = GGenEnv 
-    { name_context :: NameContext
-    , prod_rules   :: M.Map KindUsage ProdRule
+    { prod_rules   :: M.Map KindUsage ProdRule
     }
 
 emptyGGenEnv :: GGenEnv
-emptyGGenEnv = GGenEnv { name_context = M.empty
-                       , prod_rules   = M.empty }
+emptyGGenEnv = GGenEnv { prod_rules   = M.empty }
 
 class Monad m => MonadGGen m where
     getGGenEnv :: m GGenEnv
@@ -117,10 +113,6 @@ class Monad m => MonadGGen m where
     modifyGGenEnv :: (GGenEnv -> GGenEnv) -> m ()
     modifyGGenEnv f = getGGenEnv >>= \s ->
                             putGGenEnv (f s)
-
-instance MonadState GGenEnv m => MonadGGen m where
-    getGGenEnv = get
-    putGGenEnv = put
 \end{code}
 
 A type is printable as a production rule if its conclusion is a 0-arity kind.
@@ -175,69 +167,6 @@ pprWithContext :: FreeVarContext
 pprWithContext c (kr, KindDef ms) = 
   (syms, kr `S.member` c && (hasVar kr $ KindDef ms))
     where syms = M.map (typeSymbol c) ms
-\end{code}
-
-\begin{code}
-prettyProd :: MonadGGen m => Signature
-           -> KindUsage
-           -> ProdRule
-           -> m String
-prettyProd sig ku (ts, vars) = do
-  name  <- namer sig ku
-  terms <- mapM (prettySymbol sig) $ M.toList ts
-  let terms' = if vars 
-               then ('$':capitalise name) : terms
-               else terms
-  return $ capitalise name ++ " ::= " ++ intercalate " | " terms'
-\end{code}
-
-\begin{code}
-prettySymbol :: MonadGGen m => Signature
-             -> (TypeRef, RuleSymbol)
-             -> m String
-prettySymbol _ (TypeRef tn, []) = return $ capitalise tn
-prettySymbol sig (TypeRef tn, ts) = do
-  args <- liftM (intercalate ", ") $ mapM prettyPremise ts
-  return $ capitalise tn ++ "(" ++ args ++ ")"
-      where prettyPremise :: MonadGGen m => ([KindRef], KindApp) 
-                          -> m String
-            prettyPremise ([], (ku, [])) = do
-              name <- namer sig ku
-              return $ capitalise name
-            prettyPremise ([], (ku, os)) = do
-              name <- namer sig ku
-              return $ capitalise name ++ "(" ++ args ++ ")"
-                  where args = intercalate ", " $ map prettyObject os
-            prettyPremise (KindRef kn:tms, ka) = do
-              more <- prettyPremise (tms, ka)
-              return (("$" ++ capitalise kn ++ ".") ++ more)
-\end{code}
-
-\begin{code}
-namer :: MonadGGen m => Signature -> KindUsage -> m String
-namer sig (kr@(KindRef kn), vs) = do
-  context <- getsGGenEnv name_context
-  case M.lookup kr context of
-    Just m  -> case M.lookup vs m of
-                 Just n -> return n
-                 Nothing -> do
-                   let new = newName m
-                   modifyGGenEnv $ \s ->
-                     s { name_context =
-                         M.insert kr (M.insert vs new m) context }
-                   return new
-    Nothing -> do
-      let new = newName M.empty
-      modifyGGenEnv $ \s ->
-          s { name_context =
-              M.insert kr (M.singleton vs new) context }
-      return new
-    where newName existing
-             | vs == c = capitalise kn
-             | otherwise = capitalise kn ++ replicate n '\''
-             where n = 1 + M.size (M.filterWithKey (\k _ -> k/=c) existing)
-          c  = initContext kr fd
-          fd = fromJust $ M.lookup kr sig
 \end{code}
 
 A term without premises is printed as its capitalised name, otherwise

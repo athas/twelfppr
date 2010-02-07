@@ -27,7 +27,7 @@ module TwelfPPR.Reconstruct ( reconstruct
 ) where
 
 import Control.Applicative
-
+import Control.Monad.CatchIO
 import Control.Monad.Trans
 
 import TwelfPPR.Parser
@@ -55,7 +55,7 @@ only pass term and abbreviation definitions to the |readDecl| command,
 as it makes no sense to reconstruct the others.
 
 \begin{code}
-reconstruct :: MonadIO m => String -> [Decl] -> m [Decl]
+reconstruct :: MonadCatchIO m => String -> [Decl] -> m [Decl]
 reconstruct bin = withTwelfServer bin . mapM reconstruct'
     where reconstruct' :: MonadIO m => Decl -> TwelfMonadT m Decl
           reconstruct' d@(DTerm _ _)         = reconstructDecl d

@@ -28,6 +28,7 @@ module TwelfPPR.TwelfServer ( TwelfMonadT
 ) where
 
 import Control.Applicative
+import Control.Monad.CatchIO
 import Control.Monad.Reader
 
 import Data.List
@@ -90,6 +91,34 @@ runTwelfCmd cmd = do
   liftIO $ liftM (intercalate "\n") getresp
 \end{code}
 
+We use the portable |createProcess| function for starting the Twelf
+process.  For communication, interprocess pipes are created, and we
+return the handles corresponding to standard input, standard output,
+and the process itself.  We also disable buffering on the input
+handle, as |runTwelfCmd| might otherwise end up infinitely waiting for
+a response to a command that Twelf has not even seen.
+
+\begin{code}
+startTwelfProcess :: MonadIO m => String 
+                  -> m (Handle, Handle, ProcessHandle)
+startTwelfProcess bin = do
+  (Just stdin, Just stdout, _, proc) <- 
+    liftIO $ createProcess $ CreateProcess
+      { cmdspec   = RawCommand bin []
+      , cwd       = Nothing
+      , env       = Nothing
+      , std_in    = CreatePipe
+      , std_out   = CreatePipe
+      , std_err   = CreatePipe
+      , close_fds = True }
+  code <- liftIO $ getProcessExitCode proc
+  case code of
+    Just (ExitFailure e) ->
+      error $ "cannot start " ++ bin ++ ": error " ++ show e
+    _ -> do liftIO $ hSetBuffering stdin NoBuffering
+            return (stdin, stdout, proc)
+\end{code}
+
 The final bit of plumbing needed is the function for actually starting
 the Twelf server, running the |TwelfMonadT| action, and shutting down
 Twelf again.  The only subtle bit is that we run an \textit{empty}
@@ -98,29 +127,20 @@ prints a small notice followed by the usual \texttt{``\%\% OK \%\%''}
 on standard output; executing an empty command (which is ignored by
 Twelf) is a simple way to read past this.
 
+We use the |MonadCatchIO| class to get a |bracket| that will work for
+more monads than just |IO|; this is to ensure that the Twelf process
+is terminated even if an IO error happens during the communication.
+
 \begin{code}
-withTwelfServer :: MonadIO m => String -> TwelfMonadT m a -> m a
+withTwelfServer :: MonadCatchIO m => String -> TwelfMonadT m a -> m a
 withTwelfServer bin m = do
-  (Just stdin, Just stdout, _, proc) <- 
-      liftIO $ createProcess $ CreateProcess
-        { cmdspec   = RawCommand bin []
-        , cwd       = Nothing
-        , env       = Nothing
-        , std_in    = CreatePipe
-        , std_out   = CreatePipe
-        , std_err   = CreatePipe
-        , close_fds = True }
-  code <- liftIO $ getProcessExitCode proc
-  case code of
-    Just (ExitFailure e) ->
-      error $ "cannot start " ++ bin ++ ": error " ++ show e
-    _ -> return ()
-  liftIO $ hSetBuffering stdin NoBuffering
-  v <- runReaderT m' $ 
-       TwelfProc { twelfStdin  = stdin
-                 , twelfStdout = stdout
-                 , twelfProc   = proc }
-  liftIO $ terminateProcess proc
-  return v
+  bracket 
+    (startTwelfProcess bin)
+    (\(_, _, proc) -> liftIO $ terminateProcess proc)
+    (\(stdin, stdout, proc) -> do
+      runReaderT m' $ 
+        TwelfProc { twelfStdin  = stdin
+                  , twelfStdout = stdout
+                  , twelfProc   = proc })
       where TwelfMonadT m' = runTwelfCmd "" >> m
 \end{code}
