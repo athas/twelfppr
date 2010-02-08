@@ -58,7 +58,9 @@ import TwelfPPR.Main
 
 The startup function extends the default (static) configuration with
 the values specified by the command line options (if any), and passes
-the resulting configuration to the logical entry point.
+the resulting configuration to the logical entry point.  A quirk is
+that the only required argument, the path to the Twelf signature file,
+is not an argument as far as |getOpt| is concerned.
 
 \begin{code}
 main :: IO ()
@@ -82,7 +84,7 @@ account the option argument if there is one).
 
 \begin{code}
 options :: [OptDescr (PPRConfig -> IO PPRConfig)]
-options = [optHelp, optVersion, optTwelfBin]
+options = [optHelp, optVersion, optTwelfBin, optFileType]
 \end{code}
 
 The \verb'--help' option follows standard Unix convention by having
@@ -130,8 +132,23 @@ line.
 \begin{code}
 optTwelfBin :: OptDescr (PPRConfig -> IO PPRConfig)
 optTwelfBin = Option ['t'] ["twelf-bin"] (ReqArg set "FILE")
-              "Path to the twelf-server binary."
+              "Path to the twelf-server program."
     where set p conf = return $ conf { twelf_bin = p }
+\end{code}
+
+\verb'--filetype' is notable in that it performs a minor sanity check
+on its parameter option, terminating the program if it is not either
+\verb'cfg' or \verb'elf'.
+
+\begin{code}
+optFileType :: OptDescr (PPRConfig -> IO PPRConfig)
+optFileType = Option ['f'] ["filetype"] (ReqArg set "cfg|elf")
+              "How to interpret the file argument."
+    where set "elf" conf = return $ conf { default_type = Just ElfFile }
+          set "cfg" conf = return $ conf { default_type = Just CfgFile }
+          set t     _    = error (emsg t)
+          emsg t = "Unknown file type '" ++ t ++ 
+                   "'; use 'cfg' or 'elf'."
 \end{code}
 
 %include TwelfPPR/LF.lhs

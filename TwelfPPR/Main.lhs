@@ -26,19 +26,22 @@ such as \texttt{ -v}, are handled outside this module.
 
 \begin{code}
 module TwelfPPR.Main ( PPRConfig(..)
+                     , FileType(..)
                      , defaultConfig
                      , twelfppr ) where
 \end{code}
 
 \begin{code}
 import Control.Applicative
-import Control.Monad.Identity
+import Control.Monad.CatchIO
+import Control.Monad.Reader
 import Control.Monad.State
 import Data.Char
 import Data.List
 import qualified Data.Map as M
 
 import System.FilePath
+import System.IO
 
 import TwelfPPR.InfGen
 import TwelfPPR.LF
@@ -59,12 +62,14 @@ environment).
 data PPRConfig = PPRConfig { 
       twelf_bin      :: String
     , signature_path :: String
+    , default_type   :: Maybe FileType
     }
 
 defaultConfig :: PPRConfig
 defaultConfig = PPRConfig { 
                   twelf_bin = "twelf-server"
-                , signature_path = undefined 
+                , signature_path = undefined
+                , default_type   = Nothing 
                 }
 \end{code}
 
@@ -76,7 +81,7 @@ for accessing and changing said states in whatever monad we want to
 use for the rest of our program.
 
 \begin{code}
-data PPREnv = PPREnv { g_gen_env   :: GGenEnv
+data PPREnv = PPREnv { g_gen_env  :: GGenEnv
                      , print_env  :: PrintEnv }
 
 emptyPPREnv :: PPREnv
@@ -87,8 +92,10 @@ emptyPPREnv = PPREnv { g_gen_env  = emptyGGenEnv
 The |PPR| monad itself is just trivial plumbing.
 
 \begin{code}
-newtype PPR a = PPR (StateT PPREnv Identity a)
-    deriving (Functor, Monad, MonadState PPREnv)
+newtype PPR a = PPR (ReaderT PPRConfig (StateT PPREnv IO) a)
+    deriving (Functor, Monad, 
+              MonadState PPREnv, MonadReader
+              PPRConfig,  MonadIO, MonadCatchIO)
 
 instance MonadGGen PPR where
     getGGenEnv = gets g_gen_env
@@ -98,15 +105,15 @@ instance MonadPrint PPR where
     getPrintEnv = gets print_env
     putPrintEnv pe = modify $ \e -> e { print_env = pe }
 
-runPPR :: PPR a -> a
-runPPR (PPR m) = runIdentity $ evalStateT m emptyPPREnv
+runPPR :: PPRConfig -> PPR a -> IO a
+runPPR conf (PPR m) = evalStateT (runReaderT m conf) emptyPPREnv
 \end{code}
 
 \section{Everything else}
 
 Prettyprinting a signature consists of prettyprinting each type family
-definition, along with the terms in that family, as a grammar,
-separating each type family with a newline.
+definition, along with the types in that family, as either a grammar
+or a judgement, separating each type family with a newline.
 
 \begin{code}
 ppr :: Signature -> PPR String
@@ -124,19 +131,92 @@ ppr sig = newlines <$> liftM2 (++) prods infs
 
 \begin{code}
 twelfppr :: PPRConfig -> IO ()
-twelfppr conf = do str <- readFile cfg
-                   either print proc $ parseConfig cfg str
-    where cfg = signature_path conf
-          proc = (=<<) (either print rprint)
-                 . procCfg initDeclState
-          rprint s = do sig <- toSignature <$> reconstruct' s
-                        putStrLn $ runPPR $ ppr sig
+twelfppr conf = runPPR conf m
+    where m = do
+            t     <- getType path
+            decls <- case t of
+                       CfgFile -> procCfg path
+                       ElfFile -> procElf path
+            sig   <- toSignature <$> reconstruct' decls
+            pret  <- ppr sig
+            liftIO (putStrLn pret)
+          path = signature_path conf
           reconstruct' = reconstruct $ twelf_bin conf
-          procCfg _ []     = return $ Right []
-          procCfg s (f:fs) = do
-            str <- readFile $ replaceFileName cfg f
-            case parseSig s f str of
-              Left e         -> return $ Left e
-              Right (ds, s') -> either Left (Right . (ds++)) <$>
-                                procCfg s' fs
+\end{code}
+
+\section{Reading declarations}
+
+Normally, a Twelf signature is defined by a configuration file of the
+extension \verb'cfg', which references files containing actual code
+that have the extension \verb'elf'.  For user convenience, we would
+also like to be able to process \verb'elf'-files directly, as well as
+handling files with arbitrary extensions, treating them as either a
+configuration or code file, as specified by the user.  To start with,
+let us define the two ways in which a file can be processed.
+
+\begin{code}
+data FileType = CfgFile
+              | ElfFile
+\end{code}
+
+We can guess the type of a file based on its extension (ignoring
+case).
+
+\begin{code}
+fileType :: FilePath -> Maybe FileType
+fileType path = case map toLower (takeExtension path) of
+                  ".cfg" -> Just CfgFile
+                  ".elf" -> Just ElfFile
+                  _     -> Nothing
+\end{code}
+
+If the user has explicitly indicated a file type, we will use that,
+even if the file path has an extension that we recognise.  If no such
+type has been provided, and we cannot recognise the path, we print a
+warning and assume \verb'cfg'.
+
+\begin{code}
+getType :: FilePath -> PPR FileType
+getType path = do
+  def <- asks default_type
+  maybe (maybe arbitrary return (fileType path)) return def
+  where arbitrary = do
+          liftIO $ hPutStrLn stderr $ msg (takeExtension path)
+          return ElfFile
+        msg ext = "Extension '" ++ ext ++ 
+                  "' not known, defaulting to " ++
+                  ".elf (change with --filetype=cfg)"
+\end{code}
+
+Reading a list of declarations from a single \verb'elf'-file, given
+its path, is somewhat simple, but I choose implement it in terms of a
+more general function that takes a starting state.  This way, it can
+be reused for reading entire configurations of associated signatures.
+
+\begin{code}
+procElf :: MonadIO m => FilePath -> m [Decl]
+procElf = liftM fst . procElfFromState initDeclState
+
+procElfFromState :: MonadIO m => 
+                    DeclState 
+                 -> FilePath
+                 -> m ([Decl], DeclState)
+procElfFromState s path = do 
+  str <- liftIO $ readFile path
+  either (error . show) return $ parseSig s path str
+\end{code}
+
+It is now trivial to define a function that returns all the
+declarations found by the files referred to by some signature.
+
+\begin{code}
+procCfg :: FilePath -> PPR [Decl]
+procCfg path = do
+  str  <- liftIO $ readFile path
+  let conf = parseConfig path str
+  either (error . show) (procCfg' initDeclState) conf
+    where procCfg' _ []     = return []
+          procCfg' s (f:fs) = do
+            (ds, s') <- procElfFromState s f
+            liftM (ds++) (procCfg' s' fs)
 \end{code}

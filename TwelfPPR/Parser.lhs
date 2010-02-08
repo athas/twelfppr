@@ -397,8 +397,8 @@ config :: GenParser Char () [String]
 config = whiteSpace *> many (lexeme $ many1 $ noneOf "\n")
 
 parseConfig :: SourceName
-             -> String
-             -> Either ParseError [String]
+            -> String
+            -> Either ParseError [String]
 parseConfig = parse config
 \end{code}
 
