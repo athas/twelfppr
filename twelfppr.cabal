@@ -23,6 +23,7 @@ executable twelfppr
     main-is:            TwelfPPR.lhs
     other-modules:      TwelfPPR.InfGen
                         TwelfPPR.LF
+                        TwelfPPR.Main
                         TwelfPPR.Parser
                         TwelfPPR.Pretty
                         TwelfPPR.GrammarGen

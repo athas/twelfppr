@@ -45,86 +45,94 @@
 \begin{code}
 module Main () where
 import Control.Applicative
-import Control.Monad.Identity
 import Control.Monad.State
-import Data.Char
 import Data.List
-import qualified Data.Map as M
 
+import System.Console.GetOpt
 import System.Environment
-import System.FilePath
+import System.Exit
+import System.IO
 
-import TwelfPPR.InfGen
-import TwelfPPR.LF
-import TwelfPPR.GrammarGen
-import TwelfPPR.Parser
-import TwelfPPR.Pretty
-import TwelfPPR.Reconstruct
+import TwelfPPR.Main
 \end{code}
 
-\begin{code}
-data PPREnv = PPREnv { gGenEnv   :: GGenEnv
-                     , printEnv  :: PrintEnv }
-
-emptyPPREnv :: PPREnv
-emptyPPREnv = PPREnv { gGenEnv  = emptyGGenEnv
-                     , printEnv = emptyPrintEnv }
-
-newtype PPR a = PPR (StateT PPREnv Identity a)
-              deriving (Functor, Monad, MonadState PPREnv)
-
-instance MonadGGen PPR where
-    getGGenEnv = gets gGenEnv
-    putGGenEnv ge = modify $ \e -> e { gGenEnv = ge }
-
-instance MonadPrint PPR where
-    getPrintEnv = gets printEnv
-    putPrintEnv pe = modify $ \e -> e { printEnv = pe }
-
-runPPR :: PPR a -> a
-runPPR (PPR m) = runIdentity $ evalStateT m emptyPPREnv
-\end{code}
-
-Prettyprinting a signature consists of prettyprinting each type family
-definition, along with the terms in that family, as a grammar,
-separating each type family with a newline.
+The startup function extends the default (static) configuration with
+the values specified by the command line options (if any), and passes
+the resulting configuration to the logical entry point.
 
 \begin{code}
-ppr :: Signature -> PPR String
-ppr sig = newlines <$> liftM2 (++) prods infs
-    where defs = M.toList sig
-          newlines = intercalate "\n"
-          prods = do 
-            mapM_ (pprAsProd sig) . filter (prodRulePossible . snd) $ defs
-            rules <- M.toList <$> getsGGenEnv prod_rules
-            mapM (uncurry $ prettyProd sig) rules
-          infs  = mapM judge nonprods
-          nonprods = filter (not . prodRulePossible . snd) $ defs
-          judge = (return . prettyJudgement . pprAsJudgement)
-\end{code}
-
-\begin{ignore}
-\begin{code}
-test :: Signature -> IO ()
-test sig = putStrLn $ runPPR $ ppr sig
-
 main :: IO ()
-main = do [cfg] <- getArgs
-          str   <- readFile cfg
-          either print (proc cfg) $ parseConfig cfg str
-    where proc cfg = (=<<) (either print rprint)
-                     . procCfg initDeclState cfg
-          rprint s = test =<< toSignature <$> reconstruct' s
-          reconstruct' = reconstruct "/home/athas/twelf/bin/twelf-server"
-          procCfg _ _   []     = return $ Right []
-          procCfg s cfg (f:fs) = do
-            str <- readFile $ replaceFileName cfg f
-            case parseSig s f str of
-              Left e         -> return $ Left e
-              Right (ds, s') -> either Left (Right . (ds++)) <$>
-                                procCfg s' cfg fs
+main = do
+  opts  <- getOpt RequireOrder options <$> getArgs
+  case opts of
+    (opts', [cfg], []) -> do
+      let conf = defaultConfig { signature_path = cfg }
+      twelfppr =<< foldl (>>=) (return conf) opts'
+    (_, nonopts, errs) -> do 
+      mapM_ (hPutStrLn stderr) $ map ("Junk argument: " ++) nonopts
+      usage <- usageStr
+      hPutStrLn stderr $ concat errs ++ usage
+      exitFailure
 \end{code}
-\end{ignore}
+
+Our command-line options are described as mappings from their short
+and long names (eg. \verb'-h' and \verb'--help') to a (monadic)
+function that extends the TwelfPPR configuration (taking into
+account the option argument if there is one).
+
+\begin{code}
+options :: [OptDescr (PPRConfig -> IO PPRConfig)]
+options = [optHelp, optVersion, optTwelfBin]
+\end{code}
+
+The \verb'--help' option follows standard Unix convention by having
+the short name \verb'-h' and immediately terminating TwelfPPR after
+running.  The code for generating the option list is factored out into
+a definition by itself, because we also wish to display it if the user
+specifies an invalid option.
+
+\begin{code}
+optHelp :: OptDescr (PPRConfig -> IO PPRConfig)
+optHelp = Option ['h'] ["help"]
+          (NoArg $ \_ -> do
+             hPutStrLn stderr =<< usageStr
+             exitSuccess)
+          "Display this help screen."
+
+usageStr :: IO String
+usageStr = do
+  prog <- getProgName
+  let header = "Help for TwelfPPR " ++ versionString
+  let usage  = prog ++ " [options] FILE"
+  return $ usageInfo (header ++ "\n" ++ usage) options
+
+versionString :: String
+versionString = "0.1"
+\end{code}
+
+The \verb'--version' option is very similar, also terminating
+the program after printing the version information.
+
+\begin{code}
+optVersion :: OptDescr (PPRConfig -> IO PPRConfig)
+optVersion = Option ['v'] ["version"]
+             (NoArg $ \_ -> do 
+                hPutStrLn stderr ("TwelfPPR " ++ versionString ++ ".")
+                hPutStrLn stderr "Copyright (C) 2010 Troels Henriksen."
+                exitSuccess)
+             "Print version number."
+\end{code}
+
+\verb'--twelf-bin' modifies the |PPRConfig| value, setting the
+|twelf_bin| field to the parameter option provided on the command
+line.
+
+\begin{code}
+optTwelfBin :: OptDescr (PPRConfig -> IO PPRConfig)
+optTwelfBin = Option ['t'] ["twelf-bin"] (ReqArg set "FILE")
+              "Path to the twelf-server binary."
+    where set p conf = return $ conf { twelf_bin = p }
+\end{code}
 
 %include TwelfPPR/LF.lhs
 %include TwelfPPR/Pretty.lhs
@@ -133,6 +141,7 @@ main = do [cfg] <- getArgs
 %include TwelfPPR/Parser.lhs
 %include TwelfPPR/TwelfServer.lhs
 %include TwelfPPR/Reconstruct.lhs
+%include TwelfPPR/Main.lhs
 
 \appendix
 
