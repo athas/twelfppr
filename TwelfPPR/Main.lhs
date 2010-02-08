@@ -22,7 +22,7 @@ the picture: as the level just below TwelfPPR's command-line
 interface, it accepts a processed representation of command line
 arguments and performs the desired actions.  Only those parameters
 that completely circumvent the normal functionality of the program,
-such as \texttt{ -v}, are handled outside this module.
+such as \verb'-v', are handled outside this module.
 
 \begin{code}
 module TwelfPPR.Main ( PPRConfig(..)
@@ -89,7 +89,9 @@ emptyPPREnv = PPREnv { g_gen_env  = emptyGGenEnv
                      , print_env = emptyPrintEnv }
 \end{code}
 
-The |PPR| monad itself is just trivial plumbing.
+The |PPR| monad itself is just trivial plumbing.  We maintain the
+mutable environment defined above, expose the read-only program
+configuration, and wrap the IO monad.
 
 \begin{code}
 newtype PPR a = PPR (ReaderT PPRConfig (StateT PPREnv IO) a)
