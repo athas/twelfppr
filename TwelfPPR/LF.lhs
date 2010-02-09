@@ -27,6 +27,10 @@ module TwelfPPR.LF ( KindRef(..)
                    , Object(..)
                    , KindDef(..)
                    , Signature
+                   , freeInType
+                   , freeInObj
+                   , renameType
+                   , renameObj
                    , referencedKinds )
     where
 import Data.Maybe
@@ -58,7 +62,7 @@ newtype KindRef = KindRef String
 newtype TypeRef = TypeRef String
     deriving (Show, Eq, Ord)
 
-data Type = TyCon (Maybe String) Type Type
+data Type = TyCon (Maybe TypeRef) Type Type
           | TyApp Type Object
           | TyKind KindRef
             deriving (Show, Eq)
@@ -108,10 +112,56 @@ A Twelf signature is a map of names of kind names to kind definitions.
 type Signature = M.Map KindRef KindDef
 \end{code}
 
-\section{Inspecting signatures}
+\section{Operations on LF terms}
 
 We will eventually need to extract various interesting nuggets of
-information about LF definitions.
+information about LF definitions.  In particular, whether a given
+variable is free in a type or object will be of interest to many
+transformations.
+
+\begin{code}
+freeInType :: TypeRef -> Type -> Bool
+freeInType tr (TyCon (Just tr') t1 t2)
+    | tr == tr' = True
+    | otherwise = freeInType tr t1 || freeInType tr t2
+freeInType tr (TyApp t o) = freeInType tr t || freeInObj tr o
+freeInType _ _ = False
+
+freeInObj :: TypeRef -> Object -> Bool
+freeInObj tr (Const tr') = tr == tr'
+freeInObj tr (Var tr') = tr == tr'
+freeInObj tr (Lambda tr' o)
+    | tr == tr' = False
+    | otherwise = freeInObj tr o
+freeInObj tr (App o1 o2) = freeInObj tr o1 || freeInObj tr o2
+\end{code}
+
+The meaning of an LF term is independent of how its type variables are
+named (that is, $\alpha$-conversion is permitted).  Therefore, we can
+define functions that rename variables.
+
+\begin{code}
+renameType :: TypeRef -> TypeRef -> Type -> Type
+renameType from to = r
+    where r (TyCon Nothing t1 t2) = 
+            TyCon Nothing (r t1) (r t2)
+          r (TyCon (Just tr) t1 t2)
+            | tr == from = TyCon (Just tr) t1 t2
+            | otherwise  = TyCon (Just tr) (r t1) (r t2)
+          r (TyApp t o) = TyApp (r t) (renameObj from to o)
+          r t = t 
+
+renameObj :: TypeRef -> TypeRef -> Object -> Object
+renameObj from to = r
+    where r (Const tr) = Const (var tr)
+          r (Var tr)   = Var (var tr)
+          r (Lambda tr o)
+              | tr == from = Lambda tr o
+              | otherwise  = Lambda tr (r o)
+          r (App o1 o2) = App (r o1) (r o2)
+          var tr | tr == from = to
+                 | otherwise  = tr
+\end{code}
 
 To determine which kinds are applied in some type $t$ we
 can trivially walk through the tree.
