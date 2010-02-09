@@ -143,8 +143,12 @@ prettyJudgement (Judgement (KindRef name) rules) =
     where ppr (TypeRef rname, rule) = 
             "  " ++ intercalate " => " (ppr' rule) ++ "   [" ++ capitalise rname ++ "]"
           ppr' (InfRule ps con) = map pprPremise ps ++ [pprCon con]
-          pprPremise (KindRef kn, []) = kn
-          pprPremise (KindRef kn, os) =
+          pprPremise ((_, []), kr, os) = pprCon (kr, os)
+          pprPremise ((_, ps), kr, os) =
+            "(" ++ 
+            (concatMap ((++" ...=>... ") . pprCon) ps) ++ pprCon (kr, os) ++ 
+            ")"
+          pprCon (KindRef kn, []) = kn
+          pprCon (KindRef kn, os) =
             capitalise kn ++ "(" ++ intercalate ", " (map prettyObject os) ++ ")"
-          pprCon = pprPremise
 \end{code}

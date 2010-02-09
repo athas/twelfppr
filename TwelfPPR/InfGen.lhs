@@ -22,6 +22,7 @@ module TwelfPPR.InfGen ( Judgement(..)
                        ) where
 
 import qualified Data.Map as M
+import qualified Data.Set as S
 
 import TwelfPPR.LF
 \end{code}
@@ -47,7 +48,8 @@ original criteria for inclusion.
 \begin{code}
 data Judgement = Judgement KindRef (M.Map TypeRef InfRule)
 data InfRule = InfRule [Premise] Conclusion
-type Premise = (KindRef, [Object])
+type Premise = (HOPremise, KindRef, [Object])
+type HOPremise = (S.Set TypeRef, [(KindRef, [Object])])
 type Conclusion = (KindRef, [Object])
 \end{code}
 
@@ -80,5 +82,13 @@ pprAsConclusion t = ppr t []
 
 \begin{code}
 pprAsPremise :: Type -> Premise
-pprAsPremise = pprAsConclusion
+pprAsPremise t = ppr t S.empty []
+    where ppr (TyCon Nothing t1 t2) es ps = ppr t2 es (ppr' t1 []:ps)
+          ppr (TyCon (Just kr) _ t2) es ps =
+            ppr t2 (kr `S.insert` es) ps
+          ppr t1 es ps = ((es, ps), kr, os)
+              where (kr, os) = ppr' t1 []
+          ppr' (TyKind kr) os = (kr, os)
+          ppr' (TyApp t1 o) os = ppr' t1 (o:os)
+          ppr' _ _ = error "Type constructor found unexpectedly in term"
 \end{code}

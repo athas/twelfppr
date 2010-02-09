@@ -516,7 +516,9 @@ toType :: S.Set String -> LF.KindRef -> Term -> LF.Type
 toType vs s (TArrow t1 t2) =
   LF.TyCon Nothing (toType vs s t1) (toType vs s t2)
 toType vs s (TSchem (name, t1) t2) = 
-  LF.TyCon (Just name) (toType vs s t1) (toType vs' s t2)
+  LF.TyCon (Just $ LF.TypeRef name)
+           (toType vs s t1)
+           (toType vs' s t2)
       where vs' = name `S.insert` vs
 \end{code}
 
