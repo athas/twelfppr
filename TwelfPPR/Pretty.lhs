@@ -15,6 +15,7 @@ module TwelfPPR.Pretty ( PrintEnv(..)
                        , emptyPrintEnv
                        , MonadPrint(..)
                        , prettyObject
+                       , prettyKindApp
                        , prettyProd
                        , prettyJudgement ) where
 
@@ -32,21 +33,26 @@ import TwelfPPR.Util
 
 \begin{code}
 prettyObject :: Object -> String
-prettyObject = pretty
-
-pretty :: Object -> String
-pretty (Const (TypeRef tn)) = tn
-pretty (Var (TypeRef tn))   = tn
-pretty (Lambda (TypeRef tn) o) =
-  "\\" ++ tn ++ "." ++ pretty o
-pretty (App o1 o2) = descend o1 [o2]
+prettyObject (Const (TypeRef tn)) = tn
+prettyObject (Var (TypeRef tn))   = tn
+prettyObject (Lambda (TypeRef tn) o) =
+  "\\" ++ tn ++ "." ++ prettyObject o
+prettyObject (App o1 o2) = descend o1 [o2]
   where descend (Var (TypeRef tn)) args =
-          tn ++ "[" ++ intercalate "][" (map pretty args) ++ "]"
+          tn ++ "[" ++ intercalate "][" (map prettyObject args) ++ "]"
         descend (Const (TypeRef tn)) args =
-          tn ++ " " ++ intercalate " " (map pretty args)
+          tn ++ " " ++ intercalate " " (map prettyObject args)
         descend (App o1' o2') args = descend o1' $ o2' : args
         descend o args =
-          pretty o ++ " " ++ intercalate " " (map pretty args)
+          prettyObject o ++ " " ++ intercalate " " (map prettyObject args)
+\end{code}
+
+\begin{code}
+prettyKindApp :: KindRef -> [Object] -> String
+prettyKindApp (KindRef kn) [] = kn
+prettyKindApp (KindRef kn) os =
+  capitalise kn ++ "(" ++
+  intercalate ", " (map prettyObject os) ++ ")"
 \end{code}
 
 \section{Rendering production rules}
@@ -148,7 +154,5 @@ prettyJudgement (Judgement (KindRef name) rules) =
             "(" ++ 
             (concatMap ((++" ...=>... ") . pprCon) ps) ++ pprCon (kr, os) ++ 
             ")"
-          pprCon (KindRef kn, []) = kn
-          pprCon (KindRef kn, os) =
-            capitalise kn ++ "(" ++ intercalate ", " (map prettyObject os) ++ ")"
+          pprCon  = prettyKindRef
 \end{code}
