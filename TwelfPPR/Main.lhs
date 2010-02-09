@@ -209,7 +209,9 @@ procElfFromState s path = do
 \end{code}
 
 It is now trivial to define a function that returns all the
-declarations found by the files referred to by some signature.
+declarations found by the files referred to by some configuration
+file.  Note that we interpret the file paths in the configuration as
+being relative to the path of the configuration file itself.
 
 \begin{code}
 procCfg :: FilePath -> PPR [Decl]
@@ -219,6 +221,6 @@ procCfg path = do
   either (error . show) (procCfg' initDeclState) conf
     where procCfg' _ []     = return []
           procCfg' s (f:fs) = do
-            (ds, s') <- procElfFromState s f
+            (ds, s') <- procElfFromState s $ replaceFileName path f
             liftM (ds++) (procCfg' s' fs)
 \end{code}
