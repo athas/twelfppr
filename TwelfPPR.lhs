@@ -84,7 +84,7 @@ account the option argument if there is one).
 
 \begin{code}
 options :: [OptDescr (PPRConfig -> IO PPRConfig)]
-options = [optHelp, optVersion, optTwelfBin, optFileType]
+options = [optHelp, optVersion, optTwelfBin, optFileType, optIgnoreVars]
 \end{code}
 
 The \verb'--help' option follows standard Unix convention by having
@@ -149,6 +149,16 @@ optFileType = Option ['f'] ["filetype"] (ReqArg set "cfg|elf")
           set t     _    = error (emsg t)
           emsg t = "Unknown file type '" ++ t ++ 
                    "'; use 'cfg' or 'elf'."
+\end{code}
+
+The \verb'--ignore-vars' option is the interface to the |ignore_vars|
+field in the program configuration.
+
+\begin{code}
+optIgnoreVars :: OptDescr (PPRConfig -> IO PPRConfig)
+optIgnoreVars = Option ['i'] ["ignore-vars"] (NoArg set)
+                "Merge production rules that differ only in the types of possible bound variables"
+    where set conf = return $ conf { ignore_vars = True }
 \end{code}
 
 %include TwelfPPR/LF.lhs

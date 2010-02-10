@@ -63,13 +63,15 @@ data PPRConfig = PPRConfig {
       twelf_bin      :: String
     , signature_path :: String
     , default_type   :: Maybe FileType
+    , ignore_vars    :: Bool
     }
 
 defaultConfig :: PPRConfig
 defaultConfig = PPRConfig { 
                   twelf_bin = "twelf-server"
                 , signature_path = undefined
-                , default_type   = Nothing 
+                , default_type   = Nothing
+                , ignore_vars    = False
                 }
 \end{code}
 
@@ -122,8 +124,12 @@ ppr :: Signature -> PPR String
 ppr sig = newlines <$> liftM2 (++) prods infs
     where defs = M.toList sig
           newlines = intercalate "\n"
-          prods = do 
-            mapM_ (pprAsProd sig) . filter (prodRulePossible . snd) $ defs
+          prods = do
+            simple <- asks ignore_vars
+            let fprod = (pprAsProd sig $
+                         if simple then simpleContexter
+                         else defaultContexter)
+            mapM_ fprod . filter (prodRulePossible . snd) $ defs
             rules <- M.toList <$> getsGGenEnv prod_rules
             mapM (uncurry $ prettyProd sig) rules
           infs  = mapM judge nonprods

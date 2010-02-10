@@ -30,11 +30,15 @@ module TwelfPPR.GrammarGen ( GGenEnv(..)
                            , KindApp
                            , ProdRule
                            , RuleSymbol
+                           , Contexter
+                           , defaultContexter
+                           , simpleContexter
                            , prodRulePossible
                            , pprAsProd
                            , pprWithContext
                            , initContext
                            ) where
+
 import Control.Monad.State
 import Data.List
 import qualified Data.Map as M
@@ -93,6 +97,18 @@ type RuleSymbol = [([KindRef], KindApp)]
 type KindApp = (KindUsage, [Object])
 type KindUsage = (KindRef, FreeVarContext)
 type FreeVarContext = S.Set KindRef
+
+type Contexter =  Signature
+               -> KindRef
+               -> FreeVarContext
+               -> FreeVarContext
+
+defaultContexter :: Contexter
+defaultContexter sig kr c =
+  c `S.intersection` referencedKinds sig kr
+simpleContexter :: Contexter
+simpleContexter sig kr _ =
+  initContext kr (fromJust $ M.lookup kr sig)
 \end{code}
 
 \begin{code}
@@ -101,7 +117,9 @@ data GGenEnv = GGenEnv
     }
 
 emptyGGenEnv :: GGenEnv
-emptyGGenEnv = GGenEnv { prod_rules   = M.empty }
+emptyGGenEnv = GGenEnv { 
+                 prod_rules= M.empty
+               }
 
 class Monad m => MonadGGen m where
     getGGenEnv :: m GGenEnv
@@ -133,23 +151,25 @@ generated.
 
 \begin{code}
 pprAsProd :: MonadGGen m => Signature
+          -> Contexter
           -> (KindRef, KindDef)
           -> m ()
-pprAsProd sig x@(kr, fd) = do
+pprAsProd sig con x@(kr, fd) = do
   let prod = pprWithContext c x
   modifyGGenEnv $ \s ->
       s { prod_rules = M.insert (kr, c) prod (prod_rules s) }
-  ensureProds sig prod
+  ensureProds sig con prod
     where c = initContext kr fd
 \end{code}
 
 \begin{code}
 ensureProds :: MonadGGen m => Signature
+            -> Contexter
             -> ProdRule
             -> m ()
-ensureProds sig (syms, _) =
+ensureProds sig con (syms, _) =
   forM_ (krs syms) $ \(kr, c) -> do
-    let c' = c `S.intersection` referencedKinds sig kr
+    let c' = con sig kr c
     prods <- getsGGenEnv prod_rules
     case M.lookup (kr, c') prods of
       Just _ -> return ()
@@ -158,7 +178,7 @@ ensureProds sig (syms, _) =
             fd = fromJust $ M.lookup kr sig
         modifyGGenEnv $ \s ->
           s { prod_rules = M.insert (kr, c') prod (prod_rules s) }
-        ensureProds sig prod
+        ensureProds sig con prod
     where krs = concat . map (map $ fst . snd) . M.elems
 
 pprWithContext :: FreeVarContext
