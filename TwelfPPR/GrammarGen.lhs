@@ -98,15 +98,14 @@ type KindApp = (KindUsage, [Object])
 type KindUsage = (KindRef, FreeVarContext)
 type FreeVarContext = S.Set KindRef
 
-type Contexter =  Signature
-               -> KindRef
+type Contexter =  KindRef
                -> FreeVarContext
                -> FreeVarContext
 
-defaultContexter :: Contexter
+defaultContexter :: Signature -> Contexter
 defaultContexter sig kr c =
   c `S.intersection` referencedKinds sig kr
-simpleContexter :: Contexter
+simpleContexter :: Signature -> Contexter
 simpleContexter sig kr _ =
   initContext kr (fromJust $ M.lookup kr sig)
 \end{code}
@@ -155,7 +154,7 @@ pprAsProd :: MonadGGen m => Signature
           -> (KindRef, KindDef)
           -> m ()
 pprAsProd sig con x@(kr, fd) = do
-  let prod = pprWithContext c x
+  let prod = pprWithContext con c x
   modifyGGenEnv $ \s ->
       s { prod_rules = M.insert (kr, c) prod (prod_rules s) }
   ensureProds sig con prod
@@ -169,45 +168,48 @@ ensureProds :: MonadGGen m => Signature
             -> m ()
 ensureProds sig con (syms, _) =
   forM_ (krs syms) $ \(kr, c) -> do
-    let c' = con sig kr c
+    let c' = con kr c
     prods <- getsGGenEnv prod_rules
     case M.lookup (kr, c') prods of
       Just _ -> return ()
       Nothing -> do
-        let prod = pprWithContext c' (kr, fd)
-            fd = fromJust $ M.lookup kr sig
+        let prod = pprWithContext con c' (kr, fd)
+            fd   = fromJust $ M.lookup kr sig
         modifyGGenEnv $ \s ->
           s { prod_rules = M.insert (kr, c') prod (prod_rules s) }
         ensureProds sig con prod
     where krs = concat . map (map $ fst . snd) . M.elems
 
-pprWithContext :: FreeVarContext
+pprWithContext :: Contexter
+               -> FreeVarContext
                -> (KindRef, KindDef)
                -> ProdRule
-pprWithContext c (kr, KindDef ms) = 
+pprWithContext con c (kr, KindDef ms) = 
   (syms, kr `S.member` c && (hasVar kr $ KindDef ms))
-    where syms = M.map (typeSymbol c) ms
+    where syms = M.map (typeSymbol con c) ms
 \end{code}
 
 A term without premises is printed as its capitalised name, otherwise
 it is printed as its name applied to a tuple containing its premises.
 
 \begin{code}
-typeSymbol :: FreeVarContext
+typeSymbol :: Contexter
+           -> FreeVarContext
            -> Type
            -> RuleSymbol
-typeSymbol _ (TyKind _) = []
-typeSymbol c t = map (handlePremise c) $ premises t
+typeSymbol _ _ (TyKind _) = []
+typeSymbol con c t = map (handlePremise con c) $ premises t
 
-handlePremise :: FreeVarContext
+handlePremise :: Contexter
+              -> FreeVarContext
               -> Type 
               -> ([KindRef], KindApp)
-handlePremise c (TyCon _ (TyKind kr) t2) = (kr : krs, ka)
-    where (krs, ka) = handlePremise (S.insert kr c) t2 -- checkme
-handlePremise _ (TyCon _ _ _)  = error "Cannot handle greater than 2nd order HOAS"
-handlePremise c (TyKind kr)    = ([], ((kr, c), []))
-handlePremise c (TyApp t o)    = ([], descend t [o])
-    where descend (TyKind kr) os   = ((kr, c), os)
+handlePremise con c (TyCon _ (TyKind kr) t2) = (kr : krs, ka)
+    where (krs, ka) = handlePremise con (S.insert kr c) t2
+handlePremise _ _ (TyCon _ _ _)  = error "Cannot handle greater than 2nd order HOAS"
+handlePremise con c (TyKind kr)    = ([], ((kr, con kr c), []))
+handlePremise con c (TyApp t o)    = ([], descend t [o])
+    where descend (TyKind kr) os   = ((kr, con kr c), os)
           descend (TyApp t' o') os = descend t' (o':os)
           descend _ _ = error "Cannot handle embedded constructors in premises"
 \end{code}

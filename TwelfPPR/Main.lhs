@@ -127,8 +127,8 @@ ppr sig = newlines <$> liftM2 (++) prods infs
           prods = do
             simple <- asks ignore_vars
             let fprod = (pprAsProd sig $
-                         if simple then simpleContexter
-                         else defaultContexter)
+                         if simple then simpleContexter sig
+                         else defaultContexter sig)
             mapM_ fprod . filter (prodRulePossible . snd) $ defs
             rules <- M.toList <$> getsGGenEnv prod_rules
             mapM (uncurry $ prettyProd sig) rules
