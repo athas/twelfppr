@@ -84,11 +84,31 @@ pprAsConclusion t = ppr t []
 pprAsPremise :: Type -> Premise
 pprAsPremise t = ppr t S.empty []
     where ppr (TyCon Nothing t1 t2) es ps = ppr t2 es (ppr' t1 []:ps)
-          ppr (TyCon (Just kr) _ t2) es ps =
-            ppr t2 (kr `S.insert` es) ps
+          ppr (TyCon (Just tr) _ t2) es ps =
+            ppr t2' (tr' `S.insert` es) ps
+                where (tr', t2') = fixShadowing ps (tr, t2)
           ppr t1 es ps = ((es, ps), kr, os)
               where (kr, os) = ppr' t1 []
           ppr' (TyKind kr) os = (kr, os)
           ppr' (TyApp t1 o) os = ppr' t1 (o:os)
           ppr' _ _ = error "Type constructor found unexpectedly in term"
+\end{code}
+
+Removal of shadowing can be accomplished by renaming the bound
+variable, thus turning the problem into a search for a name that is
+not free in any of the premises (we refer to such a name as
+\textit{available}).  This can be done by simply appending apostrophes
+to the name --- this process is guaranteed to terminate, as there is a
+finite amount of premises.
+
+\begin{code}
+fixShadowing :: [(KindRef, [Object])] 
+             -> (TypeRef, Type)
+             -> (TypeRef, Type)
+fixShadowing ps (tr, t)
+    | available tr = (tr, t)
+    | otherwise    = (tr', renameType tr tr' t)
+    where available tr'' = all (not . any (freeInObj tr'') . snd) ps
+          trs  = tr : [ TypeRef (tn ++ "'") | TypeRef tn <- trs ]
+          tr' = head $ filter available trs
 \end{code}
