@@ -7,21 +7,26 @@
 %-----------------------------------------------------------------------------
 
 \chapter{|TwelfPPR.Pretty|}
+\label{chap:twelfppr.pretty}
 
 This module defines primitives for printing Twelf terms by themselves.
 
 \begin{code}
 module TwelfPPR.Pretty ( PrettyEnv(..)
                        , emptyPrettyEnv
+                       , SymPrettifier
                        , Prettifier
                        , PrintEnv(..)
                        , emptyPrintEnv
                        , MonadPrint(..)
                        , defPrettyKindApp
                        , defPrettyTypeApp
+                       , defPrettyRuleSym
                        , prettyObject
                        , prettyVar
                        , prettyConst
+                       , namer
+                       , prettyName
                        , prettyProd
                        , prettyJudgement ) where
 
@@ -43,34 +48,39 @@ import TwelfPPR.Util
 \begin{code}
 data PrettyEnv m = PrettyEnv { prettyKindApp :: Prettifier KindRef m
                              , prettyTypeApp :: Prettifier TypeRef m
+                             , prettyRuleSym :: SymPrettifier m
                              }
 
+type SymPrettifier m =
+    Signature -> (TypeRef, RuleSymbol) -> m String
 type Prettifier o m = o -> [Object] -> m String
 
 emptyPrettyEnv :: MonadPrint m => PrettyEnv m
 emptyPrettyEnv = PrettyEnv { prettyKindApp = defPrettyKindApp
-                           , prettyTypeApp = defPrettyTypeApp }
+                           , prettyTypeApp = defPrettyTypeApp
+                           , prettyRuleSym = defPrettyRuleSym }
 \end{code}
 
 \begin{code}
-defPrettyKindApp :: MonadPrint m => KindRef -> [Object] -> m String
-defPrettyKindApp (KindRef kn) [] = return kn
+defPrettyKindApp :: MonadPrint m => Prettifier KindRef m
+defPrettyKindApp (KindRef kn) [] = return $ prettyConst kn
 defPrettyKindApp (KindRef kn) os = do
   args <- mapM prettyObject os
-  return $ kindname ++ "(" ++ intercalate ", " args ++ ")"
-      where kindname = "\\textrm{" ++ texescape kn ++ "}"
+  return $ prettyConst kn ++ "(" ++ intercalate ", " args ++ ")"
 
-defPrettyTypeApp :: MonadPrint m => TypeRef -> [Object] -> m String
-defPrettyTypeApp (TypeRef tn) [] = return tn
+defPrettyTypeApp :: MonadPrint m => Prettifier TypeRef m
+defPrettyTypeApp (TypeRef tn) [] = return $ prettyConst tn
 defPrettyTypeApp (TypeRef tn) os = do
   args <- mapM prettyObject os
   return $ prettyConst tn ++ "(" ++ intercalate ", " args  ++ ")"
 
 prettyObject :: MonadPrint m => Object -> m String
-prettyObject (Const (TypeRef tn)) = 
-  return $ prettyConst tn
-prettyObject (Var (TypeRef tn))   =
-  return $ prettyVar tn
+prettyObject (Const tr) = do
+  pta <- asksPrettyEnv prettyTypeApp
+  pta tr []
+prettyObject (Var tr) = do
+  pta <- asksPrettyEnv prettyTypeApp
+  pta tr []
 prettyObject (Lambda (TypeRef tn) o) = do
   body <- prettyObject o
   return $ prettyVar tn ++ "." ++ body
@@ -132,15 +142,24 @@ prettyProd sig ku (ts, vars) = do
   let terms' = if vars 
                then ("\\$"++prettyName name) : terms
                else terms
-  return $ prettyName name ++ " ::= " ++ intercalate " $\\mid$ " terms' ++ "\n"
+  return ("\\begin{tabular}{rl}\n" ++
+          prettyName name ++ " ::=& $" ++ 
+          intercalate "$\\\\ \n $\\mid$ & $" terms' ++ "$\n" ++
+          "\\end{tabular}\n")
 \end{code}
 
 \begin{code}
 prettySymbol :: MonadPrint m => Signature 
              -> (TypeRef, RuleSymbol)
              -> m String
-prettySymbol _ (TypeRef tn, []) = return $ prettyName tn
-prettySymbol sig (TypeRef tn, ts) = do
+prettySymbol sig (tr, ts) = do
+  prs <- asksPrettyEnv prettyRuleSym
+  prs sig (tr, ts)
+
+defPrettyRuleSym :: MonadPrint m => SymPrettifier m
+defPrettyRuleSym _ (TypeRef tn, []) =
+  return $ prettyName tn
+defPrettyRuleSym sig (TypeRef tn, ts) = do
   args <- liftM (intercalate ", ") $ mapM prettyPremise ts
   return $ prettyName tn ++ "(" ++ args ++ ")"
       where prettyPremise ([], (ku, [])) = do

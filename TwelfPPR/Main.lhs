@@ -170,10 +170,11 @@ maybeReadAnnotations = do
     Just af -> do 
       c <- liftIO $ readFile af
       let annos = either (error . show) id (parseAnnotations af c)
-          (pka, pta) = prettifiers annos
+          (pka, pta, prs) = prettifiers annos
       modify $ \s -> s {
         pretty_env = PrettyEnv { prettyKindApp = pka
-                               , prettyTypeApp = pta } }
+                               , prettyTypeApp = pta
+                               , prettyRuleSym = prs } }
 \end{code}
 
 \section{Reading declarations}

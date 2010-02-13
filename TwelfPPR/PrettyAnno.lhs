@@ -19,6 +19,7 @@ we might desire $E \rightarrow V$.
 \begin{code}
 module TwelfPPR.PrettyAnno ( PrettyAnno(..)
                            , prettifiers
+                           , macroargs
                            , parseAnnotations
                            , prettyAnno)
     where
@@ -27,6 +28,7 @@ import Control.Applicative
 import Control.Monad
 import Data.Char
 import Data.Maybe
+import Data.List
 
 import qualified Data.Map as M
 
@@ -48,18 +50,22 @@ data PrettyAnno = KindAppAnno KindRef String
 \end{code}
 
 Given a list of |PrettyAnno|s (which describes both kinds and types),
-we can produce a pair of functions: one for printing kind applications
-and another for printing type applications.  The logic is the same for
-both cases, in that we look up in a map and fall back to a default
-printer if the operator is not found, but we must maintain two
-different functions to keep the name spaces separate.
+we can produce a triple of functions: two for printing normal kind and
+type applications and another for printing type applications in a
+production rule context.  The logic is the same for the two former
+cases, in that we look up in a map and fall back to a default printer
+if the operator is not found, but we must maintain two different
+functions to keep the name spaces separate.  The latter function is
+slightly more complicated, and will be described further below.
 
 \begin{code}
 prettifiers :: MonadPrint m => [PrettyAnno] 
             -> (Prettifier KindRef m,
-                Prettifier TypeRef m)
+                Prettifier TypeRef m,
+                SymPrettifier m)
 prettifiers descs = ( f defPrettyKindApp kindapps
-                    , f defPrettyTypeApp tyapps)
+                    , f defPrettyTypeApp tyapps
+                    , prettifyRuleSym tyapps)
     where kindapps = M.fromList $ catMaybes $ map kindapp descs
           kindapp (KindAppAnno kr s) = Just (kr, s)
           kindapp _                  = Nothing
@@ -104,6 +110,34 @@ macroargs os = liftM concat $ (mapM arg $ realargs os)
           realargs = concatMap realarg
           realarg (Lambda tr o) = Var tr : realarg o
           realarg o             = [o]
+\end{code}
+
+\section{Annotations and production rules}
+
+As outlined in \Fref{chap:twelfppr.pretty}, some kinds are visually
+presented as production rules in a grammar.  A production rule is
+essentially just a sequence of type applications, but using the type
+application printer shown above will not yield satisfactory results,
+so we have to define a different one.
+
+\begin{code}
+prettifyRuleSym :: MonadPrint m =>
+                   M.Map TypeRef String -> SymPrettifier m
+prettifyRuleSym dm sig (tr, rs) =
+    case M.lookup tr dm of
+      Nothing -> defPrettyRuleSym sig (tr, rs)
+      Just s  -> liftM (s++) (liftM (concatMap wrap . concat) $
+                              mapM prettyPremise rs)
+        where wrap x = "{" ++ x ++ "}"
+              prettyPremise ([], ((KindRef kn, _), [])) = do
+                return [prettyName kn]
+              prettyPremise ([], ((kr, _), os)) = do
+                pta  <- asksPrettyEnv prettyKindApp
+                p    <- pta kr os
+                return [p]
+              prettyPremise (KindRef kn:tms, ka) = do
+                more <- prettyPremise (tms, ka)
+                return (("\\$" ++ prettyName kn) : more)
 \end{code}
 
 \section{Parsing printing annotations}
