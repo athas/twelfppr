@@ -84,7 +84,8 @@ account the option argument if there is one).
 
 \begin{code}
 options :: [OptDescr (PPRConfig -> IO PPRConfig)]
-options = [optHelp, optVersion, optTwelfBin, optFileType, optIgnoreVars]
+options = [optHelp, optVersion, optTwelfBin, 
+           optFileType, optIgnoreVars, optAnnofilePath]
 \end{code}
 
 The \verb'--help' option follows standard Unix convention by having
@@ -151,14 +152,20 @@ optFileType = Option ['f'] ["filetype"] (ReqArg set "cfg|elf")
                    "'; use 'cfg' or 'elf'."
 \end{code}
 
-The \verb'--ignore-vars' option is the interface to the |ignore_vars|
-field in the program configuration.
+The \verb'--ignore-vars' and \verb'--annotations' options are the
+interfaces to the |ignore_vars| and |annofile_path| fields in the
+program configuration.
 
 \begin{code}
 optIgnoreVars :: OptDescr (PPRConfig -> IO PPRConfig)
 optIgnoreVars = Option ['i'] ["ignore-vars"] (NoArg set)
                 "Merge production rules that differ only in the types of possible bound variables"
     where set conf = return $ conf { ignore_vars = True }
+
+optAnnofilePath :: OptDescr (PPRConfig -> IO PPRConfig)
+optAnnofilePath = Option ['a'] ["annotations"] (ReqArg set "FILE")
+                  "Read prettyprinting annotations from the given file."
+    where set val conf = return $ conf { annofile_path = Just val }
 \end{code}
 
 %include TwelfPPR/LF.lhs

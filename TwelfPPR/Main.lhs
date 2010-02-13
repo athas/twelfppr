@@ -39,6 +39,7 @@ import Control.Monad.State
 import Data.Char
 import Data.List
 import qualified Data.Map as M
+import Data.Maybe
 
 import System.FilePath
 import System.IO
@@ -48,6 +49,7 @@ import TwelfPPR.LF
 import TwelfPPR.GrammarGen
 import TwelfPPR.Parser
 import TwelfPPR.Pretty
+import TwelfPPR.PrettyAnno
 import TwelfPPR.Reconstruct
 \end{code}
 
@@ -64,6 +66,7 @@ data PPRConfig = PPRConfig {
     , signature_path :: String
     , default_type   :: Maybe FileType
     , ignore_vars    :: Bool
+    , annofile_path  :: Maybe String
     }
 
 defaultConfig :: PPRConfig
@@ -72,6 +75,7 @@ defaultConfig = PPRConfig {
                 , signature_path = undefined
                 , default_type   = Nothing
                 , ignore_vars    = False
+                , annofile_path  = Nothing
                 }
 \end{code}
 
@@ -84,11 +88,13 @@ use for the rest of our program.
 
 \begin{code}
 data PPREnv = PPREnv { g_gen_env  :: GGenEnv
-                     , print_env  :: PrintEnv }
+                     , print_env  :: PrintEnv
+                     , pretty_env :: PrettyEnv PPR }
 
 emptyPPREnv :: PPREnv
 emptyPPREnv = PPREnv { g_gen_env  = emptyGGenEnv
-                     , print_env = emptyPrintEnv }
+                     , print_env  = emptyPrintEnv
+                     , pretty_env = emptyPrettyEnv }
 \end{code}
 
 The |PPR| monad itself is just trivial plumbing.  We maintain the
@@ -108,6 +114,8 @@ instance MonadGGen PPR where
 instance MonadPrint PPR where
     getPrintEnv = gets print_env
     putPrintEnv pe = modify $ \e -> e { print_env = pe }
+    askPrettyEnv = gets pretty_env
+    asksPrettyEnv f = gets (f . pretty_env)
 
 runPPR :: PPRConfig -> PPR a -> IO a
 runPPR conf (PPR m) = evalStateT (runReaderT m conf) emptyPPREnv
@@ -134,7 +142,7 @@ ppr sig = newlines <$> liftM2 (++) prods infs
             mapM (uncurry $ prettyProd sig) rules
           infs  = mapM judge nonprods
           nonprods = filter (not . prodRulePossible . snd) $ defs
-          judge = (return . prettyJudgement . pprAsJudgement)
+          judge = prettyJudgement . pprAsJudgement
 \end{code}
 
 \begin{code}
@@ -146,10 +154,26 @@ twelfppr conf = runPPR conf m
                        CfgFile -> procCfg path
                        ElfFile -> procElf path
             sig   <- toSignature <$> reconstruct' decls
+            maybeReadAnnotations
             pret  <- ppr sig
             liftIO (putStrLn pret)
           path = signature_path conf
           reconstruct' = reconstruct $ twelf_bin conf
+\end{code}
+
+\begin{code}
+maybeReadAnnotations :: PPR ()
+maybeReadAnnotations = do
+  maf <- asks annofile_path
+  case maf of
+    Nothing -> return ()
+    Just af -> do 
+      c <- liftIO $ readFile af
+      let annos = either (error . show) id (parseAnnotations af c)
+          (pka, pta) = prettifiers annos
+      modify $ \s -> s {
+        pretty_env = PrettyEnv { prettyKindApp = pka
+                               , prettyTypeApp = pta } }
 \end{code}
 
 \section{Reading declarations}

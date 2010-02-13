@@ -26,6 +26,7 @@ programs.
 
 \begin{code}
 module TwelfPPR.Parser ( upcaseId
+                       , idChar
                        , Term(..)
                        , Decl(..)
                        , DeclState(..)

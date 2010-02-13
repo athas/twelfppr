@@ -19,13 +19,14 @@ flag testing
     default: False
 
 executable twelfppr
-    build-depends: mtl, unix, time, base==4.*, containers, parsec==3.*, filepath==1.*, process, MonadCatchIO-mtl==0.2.*
+    build-depends: mtl, unix, time, base==4.*, containers, parsec==3.*, filepath==1.*, process, MonadCatchIO-mtl==0.2.*, regex-compat
     main-is:            TwelfPPR.lhs
     other-modules:      TwelfPPR.InfGen
                         TwelfPPR.LF
                         TwelfPPR.Main
                         TwelfPPR.Parser
                         TwelfPPR.Pretty
+                        TwelfPPR.PrettyAnno
                         TwelfPPR.GrammarGen
                         TwelfPPR.Reconstruct
                         TwelfPPR.TwelfServer
