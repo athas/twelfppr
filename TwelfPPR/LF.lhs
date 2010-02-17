@@ -95,7 +95,21 @@ data Object = Const TypeRef
             | Var TypeRef
             | Lambda TypeRef Object
             | App Object Object
-              deriving (Show, Eq)
+              deriving (Show, Ord)
+\end{code}
+
+When comparing objects for equality, we permit $\alpha$-conversion of
+variables.
+
+\begin{code}
+instance Eq Object where
+    Const tr == Const tr' = tr == tr'
+    Var tr == Var tr' = tr == tr'
+    Lambda tr1 o1 == Lambda tr2 o2 =
+      o1 == renameObj tr2 tr1 o2
+    App o1a o1b == App o2a o2b =
+      o1a == o2a && o1b == o2b
+    _ == _ = False
 \end{code}
 
 A kind definition maps type names to the actual types (or
