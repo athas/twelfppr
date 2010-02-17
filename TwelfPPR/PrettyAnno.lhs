@@ -132,7 +132,7 @@ prettifyRuleSym dm sig (tr, rs) =
               prettyPremise ([], ((KindRef kn, _), [])) = do
                 return [prettyName kn]
               prettyPremise ([], ((kr, _), os)) = do
-                pta  <- asksPrettyEnv prettyKindApp
+                pta  <- asksPrintConf prettyKindApp
                 p    <- pta kr os
                 return [p]
               prettyPremise (KindRef kn:tms, ka) = do

@@ -12,8 +12,8 @@
 This module defines primitives for printing Twelf terms by themselves.
 
 \begin{code}
-module TwelfPPR.Pretty ( PrettyEnv(..)
-                       , emptyPrettyEnv
+module TwelfPPR.Pretty ( PrintConf(..)
+                       , emptyPrintConf
                        , SymPrettifier
                        , Prettifier
                        , PrintEnv(..)
@@ -28,13 +28,18 @@ module TwelfPPR.Pretty ( PrettyEnv(..)
                        , namer
                        , prettyName
                        , prettyProd
-                       , prettyJudgement ) where
+                       , prettyRules
+                       , premiseWithEnv
+                       , judgementWithEnv
+                       , judgementNoEnv
+                       , premiseWithContext ) where
 
 import Control.Monad
 
 import Data.Char
 import Data.List
 import qualified Data.Map as M
+import qualified Data.Set as S
 import Data.Maybe
 
 import Text.Regex
@@ -46,19 +51,20 @@ import TwelfPPR.Util
 \end{code}
 
 \begin{code}
-data PrettyEnv m = PrettyEnv { prettyKindApp :: Prettifier KindRef m
-                             , prettyTypeApp :: Prettifier TypeRef m
-                             , prettyRuleSym :: SymPrettifier m
-                             }
-
 type SymPrettifier m =
     Signature -> (TypeRef, RuleSymbol) -> m String
 type Prettifier o m = o -> [Object] -> m String
+\end{code}
 
-emptyPrettyEnv :: MonadPrint m => PrettyEnv m
-emptyPrettyEnv = PrettyEnv { prettyKindApp = defPrettyKindApp
-                           , prettyTypeApp = defPrettyTypeApp
-                           , prettyRuleSym = defPrettyRuleSym }
+\begin{code}
+prettyConst :: String -> String
+prettyConst s = "\\textrm{" ++ texescape s ++ "}"
+
+prettyVar :: String -> String
+prettyVar s = case matchRegex r s of
+                Just [name, i] -> texescape name ++ "_{" ++ i ++ "}"
+                _ -> texescape s
+    where r = mkRegex "([^0-9]+)([0-9]+)"
 \end{code}
 
 \begin{code}
@@ -73,14 +79,14 @@ defPrettyTypeApp (TypeRef tn) [] = return $ prettyConst tn
 defPrettyTypeApp (TypeRef tn) os = do
   args <- mapM prettyObject os
   return $ prettyConst tn ++ "(" ++ intercalate ", " args  ++ ")"
+\end{code}
 
+\begin{code}
 prettyObject :: MonadPrint m => Object -> m String
-prettyObject (Const tr) = do
-  pta <- asksPrettyEnv prettyTypeApp
-  pta tr []
-prettyObject (Var tr) = do
-  pta <- asksPrettyEnv prettyTypeApp
-  pta tr []
+prettyObject (Const tr) =
+  pprTypeApp tr []
+prettyObject (Var (TypeRef tn)) =
+  return $ prettyVar tn
 prettyObject (Lambda (TypeRef tn) o) = do
   body <- prettyObject o
   return $ prettyVar tn ++ "." ++ body
@@ -88,9 +94,7 @@ prettyObject (App o1 o2) = descend o1 [o2]
   where descend (Var (TypeRef tn)) os = do
           args <- mapM prettyObject os
           return $ prettyVar tn ++ "[" ++ intercalate "][" args ++ "]"
-        descend (Const tr) os = do
-          pta <- asksPrettyEnv prettyTypeApp
-          pta tr os
+        descend (Const tr) os = pprTypeApp tr os
         descend (App o1' o2') os = descend o1' $ o2' : os
         descend o os = do
           args <- mapM prettyObject os
@@ -98,7 +102,115 @@ prettyObject (App o1 o2) = descend o1 [o2]
           return $ o' ++ "\\ " ++ intercalate "\\ " args
 \end{code}
 
-\section{Rendering production rules}
+\section{Rendering inference rules}
+
+\begin{code}
+type InfRulesPrinter m =
+    (KindRef -> S.Set (KindRef, [Object]))
+        -> JudgementEnv -> Conclusion -> m String
+
+judgementWithEnv :: MonadPrint m => InfRulesPrinter m
+judgementWithEnv kenv (_, vs) (kr, os) = do
+  liftM2 (++) env (pprKindApp kr os)
+      where env | kenv kr /= S.empty  = do
+                    vars' <- liftM (concatMap $ \s -> "\\{" ++ s ++ "\\}")
+                             (mapM (uncurry pprKindApp) vs)
+                    return ("\\Gamma " ++ vars' ++ "\\vdash")
+                | otherwise = return ""
+
+judgementNoEnv :: MonadPrint m => InfRulesPrinter m
+judgementNoEnv _ _ = uncurry pprKindApp
+\end{code}
+
+\begin{code}
+prettyRules :: MonadPrint m => (KindRef -> S.Set (KindRef, [Object])) -> InfRules -> m String
+prettyRules kenv (InfRules kr@(KindRef name) rules) = do
+  rules'   <- mapM ppr $ M.toList rules
+  envrules <- mapM pprvar $ S.toList $ kenv kr
+  return $ "[" ++ name ++ "]\n" ++ concatMap (++"\n") (rules' ++ envrules)
+    where ppr (TypeRef tn, InfRule ps con) = do
+            asRule tn $ do
+              pp   <- asksPrintConf premisePrinter
+              ps'  <- mapM (pp kenv) $ reverse ps
+              con' <- pprJudgement kenv (S.empty, []) con
+              return ("\\nfrac{\n" ++ intercalate "\n\\quad\n" ps' ++
+                      "}{\n" ++ con' ++ "\n}")
+          pprvar x@(KindRef kn, _) =
+            asRule rulename $ pprJudgement kenv (S.empty, [x]) x
+                where rulename = ("Var-" ++ name ++ kn)
+
+asRule :: Monad m => String -> m String -> m String
+asRule label body = do
+  body' <- body
+  return ("\\begin{displaymath}\n" ++ body' ++
+          "\\quad" ++ ruleLabel label ++ 
+          "\n\\end{displaymath}\n")
+
+type JudgementPrinter m =
+    (KindRef -> S.Set (KindRef, [Object]))
+    -> Judgement -> m String
+
+premiseWithEnv :: MonadPrint m => JudgementPrinter m
+premiseWithEnv kenv ((vs, ps), kr, os) =
+  pprJudgement kenv (vs, ps) (kr, os)
+
+premiseWithContext :: MonadPrint m => JudgementPrinter m
+premiseWithContext kenv ((_, []), kr, os) = 
+  pprJudgement kenv (S.empty, []) (kr, os)
+premiseWithContext kenv ((_, ps), kr, os) = do
+  con <- pprJudgement kenv (S.empty, []) (kr, os)
+  ps'  <- liftM concat $ mapM proc ps
+  return $ "{{" ++ ps' ++ "}\\atop" ++ "{\n" ++ con ++ "\n}}"
+      where proc p = do p' <- pprJudgement kenv (S.empty, []) p
+                        return ("{\\nfrac{}{" ++ p' ++
+                                   "}\\atop{\\vdots}}")
+\end{code}
+
+\begin{code}
+ruleLabel :: String -> String
+ruleLabel tn = "\\textsc{" ++ (texescape . capitalise  . pretty) tn ++ "}"
+    where pretty ('_':c:s) = '-' : c : pretty s
+          pretty (c:s)     = c : pretty s
+          pretty []        = []
+\end{code}
+
+\section{Monad}
+
+\begin{code}
+data PrintConf m = PrintConf 
+  { prettyKindApp   :: Prettifier KindRef m
+  , prettyTypeApp   :: Prettifier TypeRef m
+  , prettyRuleSym   :: SymPrettifier m
+  , prettyJudgement :: InfRulesPrinter m
+  , premisePrinter  :: JudgementPrinter m
+  }
+
+emptyPrintConf :: MonadPrint m => PrintConf m
+emptyPrintConf = PrintConf 
+  { prettyKindApp   = defPrettyKindApp
+  , prettyTypeApp   = defPrettyTypeApp
+  , prettyRuleSym   = defPrettyRuleSym
+  , prettyJudgement = judgementWithEnv
+  , premisePrinter  = premiseWithEnv 
+  }
+\end{code}
+
+\begin{code}
+pprJudgement :: MonadPrint m => InfRulesPrinter m
+pprJudgement kenv x y = do
+  pj <- asksPrintConf prettyJudgement
+  pj kenv x y
+
+pprKindApp :: MonadPrint m => Prettifier KindRef m
+pprKindApp kr os = do
+  pka <- asksPrintConf prettyKindApp
+  pka kr os
+
+pprTypeApp :: MonadPrint m => Prettifier TypeRef m
+pprTypeApp tr os = do
+  pta <- asksPrintConf prettyTypeApp
+  pta tr os
+\end{code}
 
 \begin{code}
 type NameContext = M.Map KindRef (M.Map FreeVarContext String)
@@ -121,9 +233,11 @@ class Monad m => MonadPrint m where
     modifyPrintEnv f = getPrintEnv >>= \s ->
                             putPrintEnv (f s)
 
-    askPrettyEnv  :: m (PrettyEnv m)
-    asksPrettyEnv :: (PrettyEnv m -> a) -> m a
+    askPrintConf  :: m (PrintConf m)
+    asksPrintConf :: (PrintConf m -> a) -> m a
 \end{code}
+
+\section{Rendering production rules}
 
 \begin{code}
 prettyName :: String -> String
@@ -153,7 +267,7 @@ prettySymbol :: MonadPrint m => Signature
              -> (TypeRef, RuleSymbol)
              -> m String
 prettySymbol sig (tr, ts) = do
-  prs <- asksPrettyEnv prettyRuleSym
+  prs <- asksPrintConf prettyRuleSym
   prs sig (tr, ts)
 
 defPrettyRuleSym :: MonadPrint m => SymPrettifier m
@@ -199,51 +313,4 @@ namer sig (kr@(KindRef kn), vs) = do
              where n = 1 + M.size (M.filterWithKey (\k _ -> k/=c) existing)
           c  = initContext kr fd
           fd = fromJust $ M.lookup kr sig
-\end{code}
-
-\section{Rendering inference rules}
-
-\begin{code}
-prettyConst :: String -> String
-prettyConst s = "\\textrm{" ++ texescape s ++ "}"
-
-prettyVar :: String -> String
-prettyVar s = case matchRegex r s of
-                Just [name, i] -> texescape name ++ "_{" ++ i ++ "}"
-                _ -> texescape s
-    where r = mkRegex "([^0-9]+)([0-9]+)"
-\end{code}
-
-\begin{code}
-prettyJudgement :: MonadPrint m => Judgement -> m String
-prettyJudgement (Judgement (KindRef name) rules) = do
-  rules' <- mapM ppr $ M.toList rules
-  return $ "[" ++ name ++ "]\n" ++ concatMap (++"\n") rules'
-    where ppr (tr, rule) = do
-            rule' <- ppr' rule
-            return ("\\begin{displaymath}\n" ++ rule' ++
-                    "\\quad" ++ ruleLabel tr ++ "\n\\end{displaymath}\n")
-          ppr' (InfRule ps con) = do
-            ps'   <- mapM pprPremise $ reverse ps
-            con' <- pprCon con
-            return ("\\nfrac{\n" ++ intercalate "\n\\quad\n" ps' ++
-                    "}{\n" ++ con' ++ "\n}")
-          pprPremise ((_, []), kr, os) = pprCon (kr, os)
-          pprPremise ((_, ps), kr, os) = do
-            con' <- pprCon (kr, os)
-            ps'  <- liftM concat $ mapM proc ps
-            return $ "{{" ++ ps' ++ "}\\atop" ++ "{\n" ++ con' ++ "\n}}"
-                where proc p = do p' <- pprCon p
-                                  return ("{\\nfrac{}{" ++ p' ++
-                                          "}\\atop{\\vdots}}")
-          pprCon (kr, os)  = do pka <- asksPrettyEnv prettyKindApp
-                                pka kr os
-\end{code}
-
-\begin{code}
-ruleLabel :: TypeRef -> String
-ruleLabel (TypeRef tn) = "\\textsc{" ++ (texescape . capitalise  . pretty) tn ++ "}"
-    where pretty ('_':c:s) = '-' : c : pretty s
-          pretty (c:s)     = c : pretty s
-          pretty []        = []
 \end{code}

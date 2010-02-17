@@ -14,13 +14,16 @@ module implements the transformation of a subset of Twelf types to a
 simple abstract form of inference rules.
 
 \begin{code}
-module TwelfPPR.InfGen ( Judgement(..)
+module TwelfPPR.InfGen ( InfRules(..)
                        , InfRule(..)
-                       , Premise
+                       , Judgement
+                       , JudgementEnv
                        , Conclusion
-                       , pprAsJudgement
+                       , pprAsInfRules
+                       , judgeEnv
                        ) where
 
+import Data.List
 import qualified Data.Map as M
 import qualified Data.Set as S
 
@@ -46,10 +49,10 @@ same kind as the judgement definition describes, as that would be the
 original criteria for inclusion.
 
 \begin{code}
-data Judgement = Judgement KindRef (M.Map TypeRef InfRule)
-data InfRule = InfRule [Premise] Conclusion
-type Premise = (HOPremise, KindRef, [Object])
-type HOPremise = (S.Set TypeRef, [(KindRef, [Object])])
+data InfRules = InfRules KindRef (M.Map TypeRef InfRule)
+data InfRule = InfRule [Judgement] Conclusion
+type Judgement = (JudgementEnv, KindRef, [Object])
+type JudgementEnv = (S.Set TypeRef, [(KindRef, [Object])])
 type Conclusion = (KindRef, [Object])
 \end{code}
 
@@ -58,16 +61,23 @@ abstract representation of a judgement by mapping each type in
 the kind to its corresponding inference rule.
 
 \begin{code}
-pprAsJudgement :: (KindRef, KindDef) -> Judgement
-pprAsJudgement (kr, KindDef ms) = 
-  Judgement kr $ M.map pprAsRule ms
+pprAsInfRules :: (KindRef, KindDef) -> InfRules
+pprAsInfRules (kr, KindDef ms) = 
+  InfRules kr $ M.map pprAsRule ms
+\end{code}
+
+\begin{code}
+judgeEnv :: InfRules -> S.Set (KindRef, [Object])
+judgeEnv (InfRules _ m) = S.fromList $ concatMap (ruleEnv . snd) $ M.toList m
+    where ruleEnv (InfRule ps _) = concatMap premEnv ps
+          premEnv ((_, e), _, _) = e
 \end{code}
 
 \begin{code}
 pprAsRule :: Type -> InfRule
 pprAsRule (TyCon (Just _) _ t2) = pprAsRule t2
 pprAsRule (TyCon Nothing t1 t2) =
-  InfRule (pprAsPremise t1 : ps) c
+  InfRule (pprAsJudgement t1 : ps) c
       where InfRule ps c = pprAsRule t2
 pprAsRule t = InfRule [] $ pprAsConclusion t
 \end{code}
@@ -81,8 +91,8 @@ pprAsConclusion t = ppr t []
 \end{code}
 
 \begin{code}
-pprAsPremise :: Type -> Premise
-pprAsPremise t = ppr t S.empty []
+pprAsJudgement :: Type -> Judgement
+pprAsJudgement t = ppr t S.empty []
     where ppr (TyCon Nothing t1 t2) es ps = ppr t2 es (ppr' t1 []:ps)
           ppr (TyCon (Just tr) _ t2) es ps =
             ppr t2' (tr' `S.insert` es) ps

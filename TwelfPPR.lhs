@@ -85,7 +85,8 @@ account the option argument if there is one).
 \begin{code}
 options :: [OptDescr (PPRConfig -> IO PPRConfig)]
 options = [optHelp, optVersion, optTwelfBin, 
-           optFileType, optIgnoreVars, optAnnofilePath]
+           optFileType, optIgnoreVars, optAnnofilePath,
+           optNoEnvironments]
 \end{code}
 
 The \verb'--help' option follows standard Unix convention by having
@@ -166,6 +167,17 @@ optAnnofilePath :: OptDescr (PPRConfig -> IO PPRConfig)
 optAnnofilePath = Option ['a'] ["annotations"] (ReqArg set "FILE")
                   "Read prettyprinting annotations from the given file."
     where set val conf = return $ conf { annofile_path = Just val }
+\end{code}
+
+\verb'--no-environments' asks TwelfPPR to not generate judgements that
+have an explicit environment, but rather make the context requirements
+part of the rules themselves.
+
+\begin{code}
+optNoEnvironments :: OptDescr (PPRConfig -> IO PPRConfig)
+optNoEnvironments = Option ['e'] ["no-environments"] (NoArg set)
+                    "Don't use explicit environments for judgements."
+    where set conf = return $ conf { use_environs = False }
 \end{code}
 
 %include TwelfPPR/LF.lhs

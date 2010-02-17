@@ -67,6 +67,7 @@ data PPRConfig = PPRConfig {
     , default_type   :: Maybe FileType
     , ignore_vars    :: Bool
     , annofile_path  :: Maybe String
+    , use_environs   :: Bool
     }
 
 defaultConfig :: PPRConfig
@@ -76,6 +77,7 @@ defaultConfig = PPRConfig {
                 , default_type   = Nothing
                 , ignore_vars    = False
                 , annofile_path  = Nothing
+                , use_environs   = True
                 }
 \end{code}
 
@@ -89,12 +91,12 @@ use for the rest of our program.
 \begin{code}
 data PPREnv = PPREnv { g_gen_env  :: GGenEnv
                      , print_env  :: PrintEnv
-                     , pretty_env :: PrettyEnv PPR }
+                     , print_conf :: PrintConf PPR }
 
 emptyPPREnv :: PPREnv
 emptyPPREnv = PPREnv { g_gen_env  = emptyGGenEnv
                      , print_env  = emptyPrintEnv
-                     , pretty_env = emptyPrettyEnv }
+                     , print_conf = emptyPrintConf }
 \end{code}
 
 The |PPR| monad itself is just trivial plumbing.  We maintain the
@@ -114,11 +116,33 @@ instance MonadGGen PPR where
 instance MonadPrint PPR where
     getPrintEnv = gets print_env
     putPrintEnv pe = modify $ \e -> e { print_env = pe }
-    askPrettyEnv = gets pretty_env
-    asksPrettyEnv f = gets (f . pretty_env)
+    askPrintConf = gets print_conf
+    asksPrintConf f = gets (f . print_conf)
 
 runPPR :: PPRConfig -> PPR a -> IO a
-runPPR conf (PPR m) = evalStateT (runReaderT m conf) emptyPPREnv
+runPPR conf (PPR m) = evalStateT (runReaderT m conf) =<< env
+    where env = envFromConf conf
+
+envFromConf :: PPRConfig -> IO PPREnv
+envFromConf conf = do
+  pc <- printConfFromConf conf
+  return $ emptyPPREnv {
+    print_conf = pc
+  }
+
+printConfFromConf :: PPRConfig -> IO (PrintConf PPR)
+printConfFromConf conf =
+  return $ emptyPrintConf {
+               prettyJudgement = pj
+             , premisePrinter  = pp
+             }
+      where (pj, pp)
+                | use_environs conf =
+                    (judgementWithEnv,
+                     premiseWithEnv)
+                | otherwise         =
+                    (judgementNoEnv,
+                     premiseWithContext)
 \end{code}
 
 \section{Everything else}
@@ -142,7 +166,10 @@ ppr sig = newlines <$> liftM2 (++) prods infs
             mapM (uncurry $ prettyProd sig) rules
           infs  = mapM judge nonprods
           nonprods = filter (not . prodRulePossible . snd) $ defs
-          judge = prettyJudgement . pprAsJudgement
+          judge = prettyRules kenv . pprAsInfRules
+          kenv kr = judgeEnv . pprAsInfRules 
+                    . ((,)kr) . fromJust
+                    . flip M.lookup sig $ kr
 \end{code}
 
 \begin{code}
@@ -172,9 +199,10 @@ maybeReadAnnotations = do
       let annos = either (error . show) id (parseAnnotations af c)
           (pka, pta, prs) = prettifiers annos
       modify $ \s -> s {
-        pretty_env = PrettyEnv { prettyKindApp = pka
-                               , prettyTypeApp = pta
-                               , prettyRuleSym = prs } }
+        print_conf = (print_conf s) 
+                     { prettyKindApp = pka
+                     , prettyTypeApp = pta
+                     , prettyRuleSym = prs } }
 \end{code}
 
 \section{Reading declarations}
