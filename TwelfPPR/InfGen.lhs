@@ -99,7 +99,7 @@ pprAsJudgement t = ppr t S.empty []
           ppr (TyCon (Just tr) _ t2) es ps =
             ppr t2' (tr' `S.insert` es) ps
                 where (tr', t2') = fixShadowing ps (tr, t2)
-          ppr t1 es ps = ((es, ps), kr, os)
+          ppr t1 es ps = ((es, reverse ps), kr, os)
               where (kr, os) = ppr' t1 []
           ppr' (TyKind kr) os = (kr, os)
           ppr' (TyApp t1 o) os = ppr' t1 (o:os)
