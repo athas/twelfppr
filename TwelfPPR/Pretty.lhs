@@ -402,19 +402,18 @@ prodRuleTypeVars :: MonadPrint m => Signature
                  -> ProdRule 
                  -> m (S.Set (TypeRef, Type))
 prodRuleTypeVars sig ku@(kr, _) (syms, _) = do
-  svs <- mapM symvars $ M.toList syms
-  let s = mconcat $ concat svs
+  s <- liftM (mconcat . concat) (mapM symvars $ M.toList syms)
   tr <- namer sig ku
   return $ S.insert (tr, TyKind kr) s
     where symvars (_, ps) = do
-            pvs <- mapM premvars ps
-            return $ mconcat pvs
+            liftM mconcat (mapM premvars ps)
           premvars (krs, ku'@(kr', _)) = do
             tr <- namer sig ku'
             let s = S.singleton (tr, TyKind kr')
             liftM (s:) (mapM f krs)
           f kr' = do
-            tr <- namer sig (kr', initContext kr' fd)
+            tr <- namer sig (kr', c)
             return $ S.singleton (tr, TyKind kr')
-          fd = fromJust $ M.lookup kr sig
+                where c = initContext kr' $
+                          fromJust $ M.lookup kr' sig
 \end{code}
