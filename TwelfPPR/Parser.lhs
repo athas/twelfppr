@@ -45,7 +45,6 @@ import Data.List
 import qualified Data.Map as M
 import Data.Maybe
 import Data.Ord
-import qualified Data.Set as S
 
 import Text.Parsec hiding ((<|>), many, optional)
 import Text.Parsec.String
@@ -483,7 +482,7 @@ if its conclusion (see above) is in the type family.
 
 \begin{code}
 buildFamily :: LF.KindRef -> [Decl] -> LF.KindDef
-buildFamily k@(LF.KindRef s) =
+buildFamily kr@(LF.KindRef s) =
   LF.KindDef . M.fromList . map convert . catMaybes . map pick
     where pick (DTerm tr t) 
               | ok (conclusion t) = Just (LF.TypeRef tr, t)
@@ -492,7 +491,7 @@ buildFamily k@(LF.KindRef s) =
           ok (TConstant s2)    = s == s2
           ok (TAscription t _) = ok t
           ok _                 = False
-          convert (name, t)    = (name, toType S.empty k t)
+          convert (name, t)    = (name, toType M.empty kr t)
 \end{code}
 
 Objects and types are merged in a single syntactical category in
@@ -513,14 +512,14 @@ syntactic shortcut for a $\Pi$ constructor in which the variable is
 not free in the enclosed term.
 
 \begin{code}
-toType :: S.Set String -> LF.KindRef -> Term -> LF.Type
+toType :: M.Map String LF.Type -> LF.KindRef -> Term -> LF.Type
 toType vs s (TArrow t1 t2) =
   LF.TyCon Nothing (toType vs s t1) (toType vs s t2)
 toType vs s (TSchem (name, t1) t2) = 
-  LF.TyCon (Just $ LF.TypeRef name)
-           (toType vs s t1)
-           (toType vs' s t2)
-      where vs' = name `S.insert` vs
+  LF.TyCon (Just $ LF.TypeRef name) ty1 ty2
+      where ty1 = toType vs s t1
+            vs' = M.insert name ty1 vs
+            ty2 = toType vs' s t2
 \end{code}
 
 Application is quite simple too, the |TApp|s in the Twelf syntax
@@ -529,7 +528,8 @@ constant or variable by itself as the kind named by the constant
 applied to zero arguments.
 
 \begin{code}
-toType vs s (TApp t1 t2) = LF.TyApp (toType vs s t1) (toObject vs t2)
+toType vs s (TApp t1 t2) = 
+  LF.TyApp (toType vs s t1) (toObject vs s t2)
 toType _ _ (TConstant name) = LF.TyKind (LF.KindRef name)
 toType _ _ (TVar name)      = LF.TyKind (LF.KindRef name)
 \end{code}
@@ -556,21 +556,24 @@ Converting terms to objects is trivial.  Again, we ignore any type
 ascriptions.
 
 \begin{code}
-toObject :: S.Set String -> Term -> LF.Object
-toObject vs (TLambda (name, _) t) = 
-  LF.Lambda (LF.TypeRef name) (toObject vs' t)
-      where vs' = name `S.insert` vs
-toObject vs (TVar t)
-    | t `S.member` vs = LF.Var $ LF.TypeRef t
-    | otherwise       = LF.Const $ LF.TypeRef t
-toObject vs (TConstant t)
-    | t `S.member` vs = LF.Var $ LF.TypeRef t
-    | otherwise       = LF.Const $ LF.TypeRef t
-toObject vs (TApp t1 t2)      =
-  LF.App (toObject vs t1) (toObject  vs t2)
-toObject vs (TAscription t _) = toObject vs t
-toObject _ THole              =
+toObject :: M.Map String LF.Type -> LF.KindRef -> Term -> LF.Object
+toObject vs kr (TLambda (name, t1) t2) = 
+  LF.Lambda (LF.TypeRef name) ty1 (toObject vs' kr t2)
+      where vs' = M.insert name  ty1 vs
+            ty1 = toType vs kr t1
+toObject vs _ (TVar t) =
+  maybe constant var $ M.lookup t vs
+    where constant = LF.Const $ LF.TypeRef t
+          var ty   = LF.Var (LF.TypeRef t) ty
+toObject vs _ (TConstant t) =
+  maybe constant var $ M.lookup t vs
+    where constant = LF.Const $ LF.TypeRef t
+          var ty   = LF.Var (LF.TypeRef t) ty
+toObject vs kr (TApp t1 t2)      =
+  LF.App (toObject vs kr t1) (toObject vs kr t2)
+toObject vs kr (TAscription t _) = toObject vs kr t
+toObject _ _ THole              =
   error "Cannot convert incomplete term to object"
-toObject _ _                  =
+toObject _ _ _                  =
   error "Type found where object expected in term"
 \end{code}

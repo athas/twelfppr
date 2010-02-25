@@ -27,7 +27,6 @@ module TwelfPPR.GrammarGen ( GGenEnv(..)
                            , MonadGGen(..)
                            , FreeVarContext
                            , KindUsage
-                           , KindApp
                            , ProdRule
                            , RuleSymbol
                            , Contexter
@@ -36,8 +35,8 @@ module TwelfPPR.GrammarGen ( GGenEnv(..)
                            , prodRulePossible
                            , pprAsProd
                            , pprWithContext
-                           , initContext
-                           ) where
+                           , initContext )
+    where
 
 import Control.Monad.State
 import Data.List
@@ -93,8 +92,7 @@ variables in subterms.
 
 \begin{code}
 type ProdRule = (M.Map TypeRef RuleSymbol, Bool)
-type RuleSymbol = [([KindRef], KindApp)]
-type KindApp = (KindUsage, [Object])
+type RuleSymbol = [([KindRef], KindUsage)]
 type KindUsage = (KindRef, FreeVarContext)
 type FreeVarContext = S.Set KindRef
 
@@ -132,7 +130,8 @@ class Monad m => MonadGGen m where
                             putGGenEnv (f s)
 \end{code}
 
-A type is printable as a production rule if its conclusion is a 0-arity kind.
+A type is printable as a production rule if its conclusion and
+premises are constant.
 
 \begin{code}
 prodRulePossible :: KindDef -> Bool
@@ -178,7 +177,7 @@ ensureProds sig con (syms, _) =
         modifyGGenEnv $ \s ->
           s { prod_rules = M.insert (kr, c') prod (prod_rules s) }
         ensureProds sig con prod
-    where krs = concat . map (map $ fst . snd) . M.elems
+    where krs = concat . map (map snd) . M.elems
 
 pprWithContext :: Contexter
                -> FreeVarContext
@@ -203,15 +202,13 @@ typeSymbol con c t = map (handlePremise con c) $ premises t
 handlePremise :: Contexter
               -> FreeVarContext
               -> Type 
-              -> ([KindRef], KindApp)
-handlePremise con c (TyCon _ (TyKind kr) t2) = (kr : krs, ka)
-    where (krs, ka) = handlePremise con (S.insert kr c) t2
+              -> ([KindRef], KindUsage)
+handlePremise con c (TyCon _ (TyKind kr) t2) = (kr : krs, ku)
+    where (krs, ku) = handlePremise con (S.insert kr c) t2
 handlePremise _ _ (TyCon _ _ _)  = error "Cannot handle greater than 2nd order HOAS"
-handlePremise con c (TyKind kr)    = ([], ((kr, con kr c), []))
-handlePremise con c (TyApp t o)    = ([], descend t [o])
-    where descend (TyKind kr) os   = ((kr, con kr c), os)
-          descend (TyApp t' o') os = descend t' (o':os)
-          descend _ _ = error "Cannot handle embedded constructors in premises"
+handlePremise con c (TyKind kr)    = ([], (kr, con kr c))
+handlePremise _ _ (TyApp _ _)    =
+  error "Cannot handle premises with arity > 0"
 \end{code}
 
 A constant premise is its capitalised name, just like a constant type.

@@ -21,10 +21,12 @@ module TwelfPPR.InfGen ( InfRules(..)
                        , Conclusion
                        , pprAsInfRules
                        , judgeEnv
-                       ) where
+                       , infRuleTypeVars ) 
+    where
 
 import Data.List
 import qualified Data.Map as M
+import Data.Monoid
 import qualified Data.Set as S
 
 import TwelfPPR.LF
@@ -121,4 +123,19 @@ fixShadowing ps (tr, t)
     where available tr'' = all (not . any (freeInObj tr'') . snd) ps
           trs  = tr : [ TypeRef (tn ++ "'") | TypeRef tn <- trs ]
           tr' = head $ filter available trs
+\end{code}
+
+\section{Inspecting inference rules}
+
+We will eventually need to know the set of type variables mentioned
+by a given inference rule.
+
+\begin{code}
+infRuleTypeVars :: InfRule -> S.Set (TypeRef, Type)
+infRuleTypeVars (InfRule js (_, os)) =
+  foldl S.union (ovars os) $ map jvars js
+    where ovars = mconcat . map objTypeVars
+          jvars (je, _, os') = jevars je `S.union` ovars os'
+          jevars (_, aps) =
+            mconcat $ map (ovars . snd) aps
 \end{code}

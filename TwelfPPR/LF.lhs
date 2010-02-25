@@ -31,7 +31,8 @@ module TwelfPPR.LF ( KindRef(..)
                    , freeInObj
                    , renameType
                    , renameObj
-                   , referencedKinds )
+                   , referencedKinds
+                   , objTypeVars )
     where
 import Data.Maybe
 import qualified Data.Map as M
@@ -65,7 +66,7 @@ newtype TypeRef = TypeRef String
 data Type = TyCon (Maybe TypeRef) Type Type
           | TyApp Type Object
           | TyKind KindRef
-            deriving (Show, Eq)
+            deriving (Show, Eq, Ord)
 \end{code}
 
 A type $\Pi x_1 : A_1. \Pi x_2 : A_2.\ldots \Pi x_{n-1} : A_{n-1}.A_n$
@@ -84,16 +85,18 @@ premises (TyCon _ t1 t2) = t1 : premises t2
 premises _               = []
 \end{code}
 
-LF |Object|s should always be in $\beta$ normal form, though that
-restriction is not enforced by this definition.  We distinguish
-between referencing types that are part of some top-level constant
-definition in the signature (the |Const| constructor) and those that
-are type variables in the enclosing term (|Var|).
+LF |Object|s should always be in $\beta$ and $\eta$ normal form,
+though that restriction is not enforced by this definition.  We
+distinguish between referencing types that are part of some top-level
+constant definition in the signature (the |Const| constructor) and
+those that are type variables in the enclosing term (|Var|).  We
+annotate all variables with their type, at both binding- and
+usage-points.
 
 \begin{code}
 data Object = Const TypeRef
-            | Var TypeRef
-            | Lambda TypeRef Object
+            | Var TypeRef Type
+            | Lambda TypeRef Type Object
             | App Object Object
               deriving (Show, Ord)
 \end{code}
@@ -104,9 +107,9 @@ variables.
 \begin{code}
 instance Eq Object where
     Const tr == Const tr' = tr == tr'
-    Var tr == Var tr' = tr == tr'
-    Lambda tr1 o1 == Lambda tr2 o2 =
-      o1 == renameObj tr2 tr1 o2
+    Var tr1 t1 == Var tr2 t2 = tr1 == tr2 && t1 == t2
+    Lambda tr1 t1 o1 == Lambda tr2 t2 o2 =
+      o1 == renameObj tr2 tr1 o2 && t1 == t2
     App o1a o1b == App o2a o2b =
       o1a == o2a && o1b == o2b
     _ == _ = False
@@ -143,10 +146,10 @@ freeInType _ _ = False
 
 freeInObj :: TypeRef -> Object -> Bool
 freeInObj tr (Const tr') = tr == tr'
-freeInObj tr (Var tr') = tr == tr'
-freeInObj tr (Lambda tr' o)
-    | tr == tr' = False
-    | otherwise = freeInObj tr o
+freeInObj tr (Var tr' t) = tr == tr' && freeInType tr t
+freeInObj tr (Lambda tr' t o) =
+     (tr == tr' && freeInObj tr o) 
+  || freeInType tr t
 freeInObj tr (App o1 o2) = freeInObj tr o1 || freeInObj tr o2
 \end{code}
 
@@ -168,10 +171,11 @@ renameType from to = r
 renameObj :: TypeRef -> TypeRef -> Object -> Object
 renameObj from to = r
     where r (Const tr) = Const (var tr)
-          r (Var tr)   = Var (var tr)
-          r (Lambda tr o)
-              | tr == from = Lambda tr o
-              | otherwise  = Lambda tr (r o)
+          r (Var tr t) = Var (var tr) (renameType from to t)
+          r (Lambda tr t o)
+              | tr == from = Lambda tr t' o
+              | otherwise  = Lambda tr t' (r o)
+              where t' = renameType from to t
           r (App o1 o2) = App (r o1) (r o2)
           var tr | tr == from = to
                  | otherwise  = tr
@@ -209,4 +213,19 @@ referencedKinds sig = referencedKinds' S.empty
               where refs' = map (referencedKinds' visited') refs
                     refs  = S.toList $ refsInTyFam $ fromJust $ M.lookup fr sig
                     visited' = S.insert fr visited
+\end{code}
+
+The set of type variables, bound or free, of an object is defined by a
+simple recursive equation.  Note that this will interact badly with
+shadowing, $\alpha$-conversions should be performed to ensure
+uniqueness of all type variables prior to using this function.
+
+\begin{code}
+objTypeVars :: Object -> S.Set (TypeRef, Type)
+objTypeVars (Var tr t) = S.singleton (tr, t)
+objTypeVars (Lambda tr t o) =
+  S.singleton (tr, t) `S.union` objTypeVars o
+objTypeVars (App o1 o2) =
+  objTypeVars o1 `S.union` objTypeVars o2
+objTypeVars _ = S.empty
 \end{code}
