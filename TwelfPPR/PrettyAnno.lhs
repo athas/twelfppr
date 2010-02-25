@@ -56,8 +56,8 @@ The information we need is very basic: a kind or type name, and the
 operator is encountered.
 
 \begin{code}
-data PrettyAnno = KindAppAnno KindRef String
-                | TypeAppAnno TypeRef String
+data PrettyAnno = ConstAppAnno KindRef String
+                | ConstAnno TypeRef String
                 | TypeVarAnno KindRef String
 \end{code}
 
@@ -76,17 +76,17 @@ prettifiers :: MonadPrint m => [PrettyAnno]
                 Prettifier TypeRef m,
                 TypeVarPrinter m,
                 SymPrettifier m)
-prettifiers descs = ( f defPrettyKindApp $ pick kindapp
-                    , f defPrettyTypeApp $ pick tyapp
+prettifiers descs = ( f defPrettyTypeApp $ pick kindapp
+                    , f defPrettyConstApp $ pick tyapp
                     , prettifyTypeVar $ pick tyvar
                     , prettifyRuleSym $ pick tyapp)
     where pick :: Ord a =>
                   (PrettyAnno -> Maybe (a, String))
                       -> M.Map a String
           pick = M.fromList . catMaybes . flip map descs
-          kindapp (KindAppAnno kr s) = Just (kr, s)
+          kindapp (ConstAppAnno kr s) = Just (kr, s)
           kindapp _                  = Nothing
-          tyapp (TypeAppAnno tr s)   = Just (tr, s)
+          tyapp (ConstAnno tr s)    = Just (tr, s)
           tyapp _                    = Nothing
           tyvar (TypeVarAnno kr s)   = Just (kr, s)
           tyvar _                    = Nothing
@@ -139,7 +139,7 @@ from their body.
 \begin{code}
 macroargs :: MonadPrint m => [Object] -> m String
 macroargs os = liftM concat $ (mapM arg $ realargs os)
-    where arg o = do po <- prettyObject o
+    where arg o = do po <- pprObject o
                      return $ "{" ++ po ++ "}"
           realargs = concatMap realarg
           realarg (Lambda tr t o) = Var tr t : realarg o
@@ -181,13 +181,13 @@ are separated by whitespace (in a file, for example by line breaks).
 
 \begin{code}
 prettyAnno :: GenParser Char () PrettyAnno
-prettyAnno = (    string "kind" *> f KindAppAnno KindRef
-              <|> string "type" *> f TypeAppAnno TypeRef
-              <|> string "var"  *> f TypeVarAnno KindRef) <* spaces
+prettyAnno = (    string "type"  *> f ConstAppAnno KindRef
+              <|> string "const" *> f ConstAnno TypeRef
+              <|> string "var"   *> f TypeVarAnno KindRef) <* spaces
     where f c sc = spaces *>
                    pure c <*> (pure sc <*> many1 idChar )
                           <*> (spaces *> many1 (satisfy $ not . isSpace))
 
 parseAnnotations :: SourceName -> String -> Either ParseError [PrettyAnno]
-parseAnnotations = parse (spaces *> many prettyAnno)
+parseAnnotations = parse (spaces *> many prettyAnno <* eof)
 \end{code}

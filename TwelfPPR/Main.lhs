@@ -200,10 +200,10 @@ maybeReadAnnotations = do
           (pka, pta, ptv, prs) = prettifiers annos
       modify $ \s -> s {
         print_conf = (print_conf s) 
-                     { prettyKindApp = pka
-                     , prettyTypeApp = pta
-                     , prettyTypeVar = ptv
-                     , prettyRuleSym = prs } }
+                     { prettyTypeApp  = pka
+                     , prettyConstApp = pta
+                     , prettyTypeVar  = ptv
+                     , prettyRuleSym  = prs } }
 \end{code}
 
 \section{Reading declarations}

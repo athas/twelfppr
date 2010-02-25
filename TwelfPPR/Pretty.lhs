@@ -26,12 +26,12 @@ module TwelfPPR.Pretty ( PrintConf(..)
                        , PrintEnv(..)
                        , emptyPrintEnv
                        , MonadPrint(..)
-                       , defPrettyKindApp
                        , defPrettyTypeApp
+                       , defPrettyConstApp
                        , defPrettyTypeVar
                        , defPrettyRuleSym
                        , pprTypeVar
-                       , prettyObject
+                       , pprObject
                        , prettyVar
                        , prettyConst
                        , prettyName
@@ -128,16 +128,16 @@ prettyVar s = case matchRegex r s of
 \end{code}
 
 \begin{code}
-defPrettyKindApp :: MonadPrint m => Prettifier KindRef m
-defPrettyKindApp (KindRef kn) [] = return $ prettyConst kn
-defPrettyKindApp (KindRef kn) os = do
-  args <- mapM prettyObject os
+defPrettyTypeApp :: MonadPrint m => Prettifier KindRef m
+defPrettyTypeApp (KindRef kn) [] = return $ prettyConst kn
+defPrettyTypeApp (KindRef kn) os = do
+  args <- mapM pprObject os
   return $ prettyConst kn ++ "(" ++ intercalate ", " args ++ ")"
 
-defPrettyTypeApp :: MonadPrint m => Prettifier TypeRef m
-defPrettyTypeApp (TypeRef tn) [] = return $ prettyConst tn
-defPrettyTypeApp (TypeRef tn) os = do
-  args <- mapM prettyObject os
+defPrettyConstApp :: MonadPrint m => Prettifier TypeRef m
+defPrettyConstApp (TypeRef tn) [] = return $ prettyConst tn
+defPrettyConstApp (TypeRef tn) os = do
+  args <- mapM pprObject os
   return $ prettyConst tn ++ "(" ++ intercalate ", " args  ++ ")"
 
 type TypeVarPrinter m = TypeRef -> KindRef -> m String
@@ -147,25 +147,25 @@ defPrettyTypeVar (TypeRef tn) _ = return $ prettyVar tn
 \end{code}
 
 \begin{code}
-prettyObject :: MonadPrint m => Object -> m String
-prettyObject (Const tr) =
-  pprTypeApp tr []
-prettyObject (Var tr (TyKind kr)) =
+pprObject :: MonadPrint m => Object -> m String
+pprObject (Const tr) =
+  pprConstApp tr []
+pprObject (Var tr (TyKind kr)) =
   pprTypeVar tr kr
-prettyObject (Var (TypeRef tn) _) =
+pprObject (Var (TypeRef tn) _) =
   return $ prettyVar tn
-prettyObject (Lambda (TypeRef tn) _ o) = do
-  body <- prettyObject o
+pprObject (Lambda (TypeRef tn) _ o) = do
+  body <- pprObject o
   return $ prettyVar tn ++ "." ++ body
-prettyObject (App o1 o2) = descend o1 [o2]
+pprObject (App o1 o2) = descend o1 [o2]
   where descend (Var (TypeRef tn) _) os = do
-          args <- mapM prettyObject os
+          args <- mapM pprObject os
           return $ prettyVar tn ++ "[" ++ intercalate "][" args ++ "]"
-        descend (Const tr) os = pprTypeApp tr os
+        descend (Const tr) os = pprConstApp tr os
         descend (App o1' o2') os = descend o1' $ o2' : os
         descend o os = do
-          args <- mapM prettyObject os
-          o' <- prettyObject o
+          args <- mapM pprObject os
+          o' <- pprObject o
           return $ o' ++ "\\ " ++ intercalate "\\ " args
 \end{code}
 
@@ -178,15 +178,15 @@ type JudgementPrinter m =
 
 judgementWithEnv :: MonadPrint m => JudgementPrinter m
 judgementWithEnv kenv (_, vs) (kr, os) = do
-  liftM2 (++) env (pprKindApp kr os)
+  liftM2 (++) env (pprTypeApp kr os)
       where env | kenv kr /= S.empty  = do
                     vars' <- liftM (concatMap $ \s -> "\\{" ++ s ++ "\\}")
-                             (mapM (uncurry pprKindApp) vs)
+                             (mapM (uncurry pprTypeApp) vs)
                     return ("\\Gamma " ++ vars' ++ "\\vdash")
                 | otherwise = return ""
 
 judgementNoEnv :: MonadPrint m => JudgementPrinter m
-judgementNoEnv _ _ = uncurry pprKindApp
+judgementNoEnv _ _ = uncurry pprTypeApp
 \end{code}
 
 \begin{code}
@@ -250,8 +250,8 @@ ruleLabel tn = "\\textsc{" ++ (texescape . capitalise  . pretty) tn ++ "}"
 
 \begin{code}
 data PrintConf m = PrintConf
-  { prettyKindApp   :: Prettifier KindRef m
-  , prettyTypeApp   :: Prettifier TypeRef m
+  { prettyTypeApp   :: Prettifier KindRef m
+  , prettyConstApp  :: Prettifier TypeRef m
   , prettyTypeVar   :: TypeVarPrinter m
   , prettyRuleSym   :: SymPrettifier m
   , prettyJudgement :: JudgementPrinter m
@@ -260,8 +260,8 @@ data PrintConf m = PrintConf
 
 emptyPrintConf :: MonadPrint m => PrintConf m
 emptyPrintConf = PrintConf 
-  { prettyKindApp   = defPrettyKindApp
-  , prettyTypeApp   = defPrettyTypeApp
+  { prettyTypeApp   = defPrettyTypeApp
+  , prettyConstApp  = defPrettyConstApp
   , prettyTypeVar   = defPrettyTypeVar
   , prettyRuleSym   = defPrettyRuleSym
   , prettyJudgement = judgementWithEnv
@@ -273,14 +273,14 @@ pprJudgement kenv x y = do
   pj <- asksPrintConf prettyJudgement
   pj kenv x y
 
-pprKindApp :: MonadPrint m => Prettifier KindRef m
-pprKindApp kr os = do
-  pka <- asksPrintConf prettyKindApp
+pprTypeApp :: MonadPrint m => Prettifier KindRef m
+pprTypeApp kr os = do
+  pka <- asksPrintConf prettyTypeApp
   pka kr os
 
-pprTypeApp :: MonadPrint m => Prettifier TypeRef m
-pprTypeApp tr os = do
-  pta <- asksPrintConf prettyTypeApp
+pprConstApp :: MonadPrint m => Prettifier TypeRef m
+pprConstApp tr os = do
+  pta <- asksPrintConf prettyConstApp
   pta tr os
 \end{code}
 
