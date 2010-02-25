@@ -175,7 +175,7 @@ prettifyRuleSym dm sig (tr, rs) =
 
 We define a simple textual format, and an parser, for printing
 annotations.  Each annotation consists of three tokens: one of the
-strings \texttt{kind}, \texttt{type}, or \texttt{var}, followed by an
+strings \texttt{type}, \texttt{const}, or \texttt{var}, followed by an
 operator name, followed by the name of a \TeX command.  Annotations
 are separated by whitespace (in a file, for example by line breaks).
 
