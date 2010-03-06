@@ -16,14 +16,14 @@ as \textit{operators} should be represented visually in the \TeX
 output.  For example, instead of a rather boring \texttt{eval(E, V)}
 we might desire $E \rightarrow V$.
 
-Specifically, we make it possible to describe how to print two cases.
+Specifically, we make it possible to describe how to print three cases.
 
 \begin{description}
 \item[Constant applications], of the form $c M_1\ldots M_n$, where the
   operator$c$ is a reference to either a type or a kind, and the
   number of operands may be zero.
-\item[Type variables], whether they are bound through $\lambda$ or
-  $\Pi$ abstraction.
+\item[Type variables], bound through $\Pi$ abstraction.
+\item[Metavariables], bound through $\lambda$ abstraction.
 \end{description}
 
 \begin{code}
@@ -49,6 +49,7 @@ import Text.Regex
 import TwelfPPR.LF
 import TwelfPPR.Parser
 import TwelfPPR.Pretty
+import TwelfPPR.Util
 \end{code}
 
 The information we need is very basic: a kind or type name, and the
@@ -59,6 +60,7 @@ operator is encountered.
 data PrettyAnno = ConstAppAnno KindRef String
                 | ConstAnno TypeRef String
                 | TypeVarAnno KindRef String
+                | MetaVarAnno KindRef String
 \end{code}
 
 Given a list of |PrettyAnno|s (which describes both kinds and types),
@@ -75,10 +77,12 @@ prettifiers :: MonadPrint m => [PrettyAnno]
             -> (Prettifier KindRef m,
                 Prettifier TypeRef m,
                 TypeVarPrinter m,
+                TypeVarPrinter m,
                 SymPrettifier m)
 prettifiers descs = ( f defPrettyTypeApp $ pick kindapp
                     , f defPrettyConstApp $ pick tyapp
                     , prettifyTypeVar $ pick tyvar
+                    , prettifyMetaVar $ pick metavar
                     , prettifyRuleSym $ pick tyapp)
     where pick :: Ord a =>
                   (PrettyAnno -> Maybe (a, String))
@@ -88,25 +92,40 @@ prettifiers descs = ( f defPrettyTypeApp $ pick kindapp
           kindapp _                  = Nothing
           tyapp (ConstAnno tr s)    = Just (tr, s)
           tyapp _                    = Nothing
-          tyvar (TypeVarAnno kr s)   = Just (kr, s)
+          tyvar (TypeVarAnno kr s)   = Just (TyKind kr, s)
           tyvar _                    = Nothing
+          metavar (MetaVarAnno kr s) = Just (TyKind kr, s)
+          metavar _                  = Nothing
           f def dm r os = case M.lookup r dm of
                             Just s -> liftM (s++) (macroargs os)
                             Nothing -> def r os
 \end{code}
 
 \begin{code}
-prettifyTypeVar :: MonadPrint m =>
-                   M.Map KindRef String 
-                -> TypeVarPrinter m
-prettifyTypeVar dm tr@(TypeRef tn) kr =
-  case M.lookup kr dm of
-    Nothing -> def tr
+prettifyVar :: MonadPrint m =>
+               TypeVarPrinter m 
+            -> M.Map Type String 
+            -> TypeVarPrinter m
+prettifyVar def dm tr@(TypeRef tn) ty =
+  case M.lookup (TyKind $ end ty) dm of
+    Nothing -> def tr ty
     Just  s -> case matchRegex r tn of
       Just [_, i] -> return $ s ++ "_{" ++ i ++ "}"
       _           -> return s
    where r   = mkRegex "([^0-9]+)([0-9]+)"
-         def = flip defPrettyTypeVar kr
+         end (TyKind kr)    = kr
+         end (TyCon _ _ ty') = end ty'
+         end (TyApp ty' _)   = end ty'
+
+prettifyTypeVar :: MonadPrint m =>
+                   M.Map Type String
+                -> TypeVarPrinter m
+prettifyTypeVar = prettifyVar defPrettyTypeVar
+
+prettifyMetaVar :: MonadPrint m =>
+                   M.Map Type String
+                -> TypeVarPrinter m
+prettifyMetaVar = prettifyVar defPrettyMetaVar
 \end{code}
 
 \section{Passing operands}
@@ -138,12 +157,14 @@ from their body.
 
 \begin{code}
 macroargs :: MonadPrint m => [Object] -> m String
-macroargs os = liftM concat $ (mapM arg $ realargs os)
-    where arg o = do po <- pprObject o
-                     return $ "{" ++ po ++ "}"
-          realargs = concatMap realarg
-          realarg (Lambda tr t o) = Var tr t : realarg o
-          realarg o               = [o]
+macroargs os = liftM (concatMap wrap) (realargs os)
+    where wrap s = "{" ++ s ++ "}"
+          realargs = liftM concat . mapM realarg
+          realarg (Lambda tr t o) = bindingVar tr $ do
+            v <- pprObject (Var tr t)
+            liftM (v:) (realarg o)
+          realarg o               =
+            liftM (:[]) (pprObject o)
 \end{code}
 
 \section{Annotations and production rules}
@@ -162,13 +183,15 @@ prettifyRuleSym dm sig (tr, rs) =
       Nothing -> defPrettyRuleSym sig (tr, rs)
       Just s  -> liftM (s++) (liftM (concatMap wrap . concat) $
                               mapM prettyPremise rs)
-        where wrap x = "{" ++ x ++ "}"
-              prettyPremise ([], (kr@(KindRef kn), _)) = do
-                p <- pprTypeVar (TypeRef kn) kr
-                return [p]
-              prettyPremise (KindRef kn:tms, ka) = do
-                more <- prettyPremise (tms, ka)
-                return (("\\$" ++ prettyName kn) : more)
+      where wrap x = "{" ++ x ++ "}"
+            prettyPremise ([], (kr@(KindRef kn), _)) = do
+              p <- pprTypeVar (TypeRef kn) (TyKind kr)
+              return [p]
+            prettyPremise (kr@(KindRef kn):tms, ka) = do
+              let tr' = TypeRef $ "$" ++ capitalise kn
+              s    <- bindingVar tr' $ pprTypeVar tr' (TyKind kr)
+              more <- prettyPremise (tms, ka)
+              return (s : more)
 \end{code}
 
 \section{Parsing printing annotations}
@@ -183,9 +206,10 @@ are separated by whitespace (in a file, for example by line breaks).
 prettyAnno :: GenParser Char () PrettyAnno
 prettyAnno = (    string "type"  *> f ConstAppAnno KindRef
               <|> string "const" *> f ConstAnno TypeRef
-              <|> string "var"   *> f TypeVarAnno KindRef) <* spaces
+              <|> string "var"   *> f TypeVarAnno KindRef
+              <|> string "metavar" *> f MetaVarAnno KindRef) <* spaces
     where f c sc = spaces *>
-                   pure c <*> (pure sc <*> many1 idChar )
+                   pure c <*> (pure sc <*> many1 idChar)
                           <*> (spaces *> many1 (satisfy $ not . isSpace))
 
 parseAnnotations :: SourceName -> String -> Either ParseError [PrettyAnno]

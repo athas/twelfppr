@@ -471,9 +471,26 @@ isFamDef t = conclusion t == TType
 toSignature :: [Decl] -> LF.Signature
 toSignature ds = M.fromList $ catMaybes $ map convert ds
     where convert (DTerm s t)
-              | isFamDef t = Just ( LF.KindRef s
-                                  , buildFamily (LF.KindRef s) ds)
+              | isFamDef t =
+                  Just ( LF.KindRef s
+                       , buildFamily kr k ds)
+              where kr = LF.KindRef s
+                    k  = toKind M.empty t
           convert _ = Nothing
+\end{code}
+
+\begin{code}
+toKind :: M.Map String LF.Type -> Term -> LF.Kind
+toKind _ TType = LF.KiType
+toKind vs (TArrow t1 t2) =
+  LF.KiCon Nothing (toType vs t1) (toKind vs t2)
+toKind vs (TSchem (name, t1) t2) =
+  LF.KiCon (Just tr) ty1 k
+      where vs' = M.insert name ty1 vs
+            ty1 = toType vs t1
+            k   = toKind vs' t2
+            tr  = LF.TypeRef name
+toKind _ _ = error "Invalid kind declaration"
 \end{code}
 
 We need to gather all the definitions that constitute a member of the
@@ -481,9 +498,9 @@ type family that we are interested in.  A term definition is eligible
 if its conclusion (see above) is in the type family.
 
 \begin{code}
-buildFamily :: LF.KindRef -> [Decl] -> LF.KindDef
-buildFamily kr@(LF.KindRef s) =
-  LF.KindDef . M.fromList . map convert . catMaybes . map pick
+buildFamily :: LF.KindRef -> LF.Kind -> [Decl] -> LF.KindDef
+buildFamily (LF.KindRef s) k =
+  LF.KindDef k . M.fromList . map convert . catMaybes . map pick
     where pick (DTerm tr t) 
               | ok (conclusion t) = Just (LF.TypeRef tr, t)
           pick _ = Nothing
@@ -491,7 +508,7 @@ buildFamily kr@(LF.KindRef s) =
           ok (TConstant s2)    = s == s2
           ok (TAscription t _) = ok t
           ok _                 = False
-          convert (name, t)    = (name, toType M.empty kr t)
+          convert (name, t)    = (name, toType M.empty t)
 \end{code}
 
 Objects and types are merged in a single syntactical category in
@@ -512,14 +529,14 @@ syntactic shortcut for a $\Pi$ constructor in which the variable is
 not free in the enclosed term.
 
 \begin{code}
-toType :: M.Map String LF.Type -> LF.KindRef -> Term -> LF.Type
-toType vs s (TArrow t1 t2) =
-  LF.TyCon Nothing (toType vs s t1) (toType vs s t2)
-toType vs s (TSchem (name, t1) t2) = 
+toType :: M.Map String LF.Type -> Term -> LF.Type
+toType vs (TArrow t1 t2) =
+  LF.TyCon Nothing (toType vs t1) (toType vs t2)
+toType vs (TSchem (name, t1) t2) = 
   LF.TyCon (Just $ LF.TypeRef name) ty1 ty2
-      where ty1 = toType vs s t1
+      where ty1 = toType vs t1
             vs' = M.insert name ty1 vs
-            ty2 = toType vs' s t2
+            ty2 = toType vs' t2
 \end{code}
 
 Application is quite simple too, the |TApp|s in the Twelf syntax
@@ -528,16 +545,16 @@ constant or variable by itself as the kind named by the constant
 applied to zero arguments.
 
 \begin{code}
-toType vs s (TApp t1 t2) = 
-  LF.TyApp (toType vs s t1) (toObject vs s t2)
-toType _ _ (TConstant name) = LF.TyKind (LF.KindRef name)
-toType _ _ (TVar name)      = LF.TyKind (LF.KindRef name)
+toType vs (TApp t1 t2) =
+  LF.TyApp (toType vs t1) (toObject vs t2)
+toType _ (TConstant name) = LF.TyKind (LF.KindRef name)
+toType _ (TVar name)      = LF.TyKind (LF.KindRef name)
 \end{code}
 
 Type ascriptions are completely ignored: they have no semantic value.
 
 \begin{code}
-toType vs s (TAscription t _) = toType vs s t
+toType vs (TAscription t _) = toType vs t
 \end{code}
 
 The constant \texttt{type} is not permitted in types, only in type
@@ -546,9 +563,9 @@ type reconstruction should be performed to remove them.  Finally,
 lambda bindings is only permitted in objects.
 
 \begin{code}
-toType _ _ TType = error "'type' found where actual type expected in term"
-toType _ _ THole    = error "Cannot convert incomplete term to object"
-toType _ _ (TLambda _ _) = 
+toType _ TType = error "'type' found where actual type expected in term"
+toType _ THole    = error "Cannot convert incomplete term to object"
+toType _ (TLambda _ _) = 
     error "Object found where type or kind expected in term"
 \end{code}
 
@@ -556,24 +573,24 @@ Converting terms to objects is trivial.  Again, we ignore any type
 ascriptions.
 
 \begin{code}
-toObject :: M.Map String LF.Type -> LF.KindRef -> Term -> LF.Object
-toObject vs kr (TLambda (name, t1) t2) = 
-  LF.Lambda (LF.TypeRef name) ty1 (toObject vs' kr t2)
-      where vs' = M.insert name  ty1 vs
-            ty1 = toType vs kr t1
-toObject vs _ (TVar t) =
+toObject :: M.Map String LF.Type -> Term -> LF.Object
+toObject vs (TLambda (name, t1) t2) = 
+  LF.Lambda (LF.TypeRef name) ty1 (toObject vs' t2)
+      where vs' = M.insert name ty1 vs
+            ty1 = toType vs t1
+toObject vs (TVar t) =
   maybe constant var $ M.lookup t vs
     where constant = LF.Const $ LF.TypeRef t
           var ty   = LF.Var (LF.TypeRef t) ty
-toObject vs _ (TConstant t) =
+toObject vs (TConstant t) =
   maybe constant var $ M.lookup t vs
     where constant = LF.Const $ LF.TypeRef t
           var ty   = LF.Var (LF.TypeRef t) ty
-toObject vs kr (TApp t1 t2)      =
-  LF.App (toObject vs kr t1) (toObject vs kr t2)
-toObject vs kr (TAscription t _) = toObject vs kr t
-toObject _ _ THole              =
+toObject vs (TApp t1 t2)      =
+  LF.App (toObject vs t1) (toObject vs t2)
+toObject vs (TAscription t _) = toObject vs t
+toObject _ THole              =
   error "Cannot convert incomplete term to object"
-toObject _ _ _                  =
+toObject _ _                  =
   error "Type found where object expected in term"
 \end{code}

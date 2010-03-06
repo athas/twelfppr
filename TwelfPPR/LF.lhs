@@ -25,6 +25,7 @@ module TwelfPPR.LF ( KindRef(..)
                    , conclusion
                    , premises
                    , Object(..)
+                   , Kind(..)
                    , KindDef(..)
                    , Signature
                    , freeInType
@@ -32,7 +33,8 @@ module TwelfPPR.LF ( KindRef(..)
                    , renameType
                    , renameObj
                    , referencedKinds
-                   , objTypeVars )
+                   , objFreeVars
+                   , objBoundVars )
     where
 import Data.Maybe
 import qualified Data.Map as M
@@ -115,11 +117,20 @@ instance Eq Object where
     _ == _ = False
 \end{code}
 
+Kinds are simple, consisting either of a $\Pi$ constructor or the
+\texttt{type} atom.
+
+\begin{code}
+data Kind = KiType
+          | KiCon (Maybe TypeRef) Type Kind
+            deriving (Show, Eq)
+\end{code}
+
 A kind definition maps type names to the actual types (or
 specifically, type families) themselves.
 
 \begin{code}
-data KindDef = KindDef (M.Map TypeRef Type)
+data KindDef = KindDef Kind (M.Map TypeRef Type)
                    deriving (Show, Eq)
 \end{code}
 
@@ -196,7 +207,7 @@ all kind applications in the member types.
 
 \begin{code}
 refsInTyFam :: KindDef -> S.Set KindRef
-refsInTyFam (KindDef fam) = 
+refsInTyFam (KindDef _ fam) = 
   foldl S.union S.empty $ map refsInType $ M.elems fam
 \end{code}
 
@@ -215,17 +226,24 @@ referencedKinds sig = referencedKinds' S.empty
                     visited' = S.insert fr visited
 \end{code}
 
-The set of type variables, bound or free, of an object is defined by a
-simple recursive equation.  Note that this will interact badly with
+The set of type variables, bound or free, of an object is defined by
+simple recursive equations.  Note that this will interact badly with
 shadowing, $\alpha$-conversions should be performed to ensure
 uniqueness of all type variables prior to using this function.
 
 \begin{code}
-objTypeVars :: Object -> S.Set (TypeRef, Type)
-objTypeVars (Var tr t) = S.singleton (tr, t)
-objTypeVars (Lambda tr t o) =
-  S.singleton (tr, t) `S.union` objTypeVars o
-objTypeVars (App o1 o2) =
-  objTypeVars o1 `S.union` objTypeVars o2
-objTypeVars _ = S.empty
+objFreeVars :: Object -> S.Set (TypeRef, Type)
+objFreeVars (Var tr t) = S.singleton (tr, t)
+objFreeVars (Lambda tr t o) =
+  (tr, t) `S.delete` objFreeVars o
+objFreeVars (App o1 o2) =
+  objFreeVars o1 `S.union` objFreeVars o2
+objFreeVars _ = S.empty
+
+objBoundVars :: Object -> S.Set (TypeRef, Type)
+objBoundVars (Lambda tr t o) =
+  S.singleton (tr, t) `S.union` objBoundVars o
+objBoundVars (App o1 o2) =
+  objBoundVars o1 `S.union` objBoundVars o2
+objBoundVars _ = S.empty
 \end{code}

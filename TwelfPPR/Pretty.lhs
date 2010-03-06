@@ -26,7 +26,9 @@ module TwelfPPR.Pretty ( PrintConf(..)
                        , PrintEnv(..)
                        , emptyPrintEnv
                        , MonadPrint(..)
+                       , bindingVar
                        , defPrettyTypeApp
+                       , defPrettyMetaVar
                        , defPrettyConstApp
                        , defPrettyTypeVar
                        , defPrettyRuleSym
@@ -63,9 +65,11 @@ import TwelfPPR.Util
 \section{Type variables}
 
 \begin{code}
-varMap :: MonadPrint m => S.Set (TypeRef, Type) ->
-          m (M.Map Type (M.Map TypeRef String))
-varMap s = liftM M.fromList (mapM procVars $ M.toList table)
+varMap :: MonadPrint m => 
+          m (TypeVarPrinter m)
+       -> S.Set (TypeRef, Type) 
+       -> m (M.Map Type (M.Map TypeRef String))
+varMap p s = liftM M.fromList (mapM (procVars p) $ M.toList table)
     where table = foldl f M.empty $ S.toList s
           f m (tr, t) = M.insertWith (++) t [tr] m
 
@@ -77,18 +81,16 @@ splitVar (TypeRef tn) =
     where r = mkRegex "([^0-9]+)([0-9]+)"
 
 procVars :: MonadPrint m =>
-            (Type, [TypeRef])
+            m (TypeVarPrinter m)
+         -> (Type, [TypeRef])
          -> m (Type, M.Map TypeRef String)
-procVars (t@(TyKind kr), trs) = do
+procVars p (ty, trs) = do
   tm <- mapM proc $ uniqify trs []
-  return (t, M.fromList tm)
+  return (ty, M.fromList tm)
     where proc (tr, tr') = do
-            pta <- asksPrintConf prettyTypeVar 
-            s <- pta tr' kr
+            pt <- p
+            s  <- pt tr' ty
             return (tr, s)
-procVars (t, trs) = do
-  return (t, M.fromList $ map proc trs)
-      where proc tr@(TypeRef tn) = (tr, prettyVar tn)
 
 uniqify :: [TypeRef]
         -> [((TypeRef, TypeRef), Maybe Integer)]
@@ -102,10 +104,14 @@ uniqify (tr:trs) seen =
                    Just (1 + maximum (0:catMaybes (map snd seen)))
                | otherwise = idx
 
-cfgVarMap :: MonadPrint m => S.Set (TypeRef, Type) -> m ()
-cfgVarMap s = do
-  vm <- varMap s
-  modifyPrintEnv $ \e -> e { type_vars = vm }
+cfgVarMaps :: MonadPrint m => 
+             S.Set (TypeRef, Type)
+          -> S.Set (TypeRef, Type) -> m ()
+cfgVarMaps ts ms = do
+  vm <- varMap (asksPrintConf prettyTypeVar) ts
+  mm <- varMap (asksPrintConf prettyMetaVar) ms
+  modifyPrintEnv $ \e -> e { type_vars = vm
+                           , meta_vars = mm }
 \end{code}
 
 \section{Generalities}
@@ -140,27 +146,30 @@ defPrettyConstApp (TypeRef tn) os = do
   args <- mapM pprObject os
   return $ prettyConst tn ++ "(" ++ intercalate ", " args  ++ ")"
 
-type TypeVarPrinter m = TypeRef -> KindRef -> m String
+type TypeVarPrinter m = TypeRef -> Type -> m String
 
 defPrettyTypeVar :: MonadPrint m => TypeVarPrinter m
 defPrettyTypeVar (TypeRef tn) _ = return $ prettyVar tn
+
+defPrettyMetaVar :: MonadPrint m => TypeVarPrinter m
+defPrettyMetaVar (TypeRef tn) _ = return $ prettyVar tn
 \end{code}
 
 \begin{code}
 pprObject :: MonadPrint m => Object -> m String
 pprObject (Const tr) =
   pprConstApp tr []
-pprObject (Var tr (TyKind kr)) =
-  pprTypeVar tr kr
-pprObject (Var (TypeRef tn) _) =
-  return $ prettyVar tn
-pprObject (Lambda (TypeRef tn) _ o) = do
+pprObject (Var tr ty) = do
+  pprTypeVar tr ty
+pprObject (Lambda tr ty o) = bindingVar tr $ do
   body <- pprObject o
-  return $ prettyVar tn ++ "." ++ body
+  vs <- pprTypeVar tr ty
+  return $ vs ++ "." ++ body
 pprObject (App o1 o2) = descend o1 [o2]
-  where descend (Var (TypeRef tn) _) os = do
+  where descend (Var tr ty) os = do
           args <- mapM pprObject os
-          return $ prettyVar tn ++ "[" ++ intercalate "][" args ++ "]"
+          s    <- pprTypeVar tr ty
+          return $ s ++ "[" ++ intercalate "][" args ++ "]"
         descend (Const tr) os = pprConstApp tr os
         descend (App o1' o2') os = descend o1' $ o2' : os
         descend o os = do
@@ -173,13 +182,12 @@ pprObject (App o1 o2) = descend o1 [o2]
 
 \begin{code}
 type JudgementPrinter m =
-    (KindRef -> S.Set (KindRef, [Object]))
-        -> JudgementEnv -> Conclusion -> m String
+    (KindRef -> [Type]) -> JudgementEnv -> Conclusion -> m String
 
 judgementWithEnv :: MonadPrint m => JudgementPrinter m
 judgementWithEnv kenv (_, vs) (kr, os) = do
   liftM2 (++) env (pprTypeApp kr os)
-      where env | kenv kr /= S.empty  = do
+      where env | kenv kr /= []  = do
                     vars' <- liftM (concatMap $ \s -> "\\{" ++ s ++ "\\}")
                              (mapM (uncurry pprTypeApp) vs)
                     return ("\\Gamma " ++ vars' ++ "\\vdash")
@@ -191,25 +199,29 @@ judgementNoEnv _ _ = uncurry pprTypeApp
 
 \begin{code}
 prettyRules :: MonadPrint m => 
-               (KindRef -> S.Set (KindRef, [Object]))
+               (KindRef -> [Type])
             -> InfRules -> m String
-prettyRules kenv (InfRules kr@(KindRef name) rules) = do
+prettyRules kenv irs@(InfRules (KindRef name) _ rules) = do
   rules'   <- mapM ppr $ M.toList rules
-  envrules <- mapM pprvar $ S.toList $ kenv kr
+  envrules <- mapM pprvar $ S.toList $ judgeEnv irs
   return $ "[" ++ name ++ "]\n" ++ concatMap (++"\n") (rules' ++ envrules)
     where ppr (TypeRef tn, ir@(InfRule ps con)) = do
-            cfgVarMap $ infRuleTypeVars ir
+            cfgVarMaps (infRuleTypeVars ir)
+                       (infRuleMetaVars ir)
             asRule tn $ do
               pp   <- asksPrintConf premisePrinter
               ps'  <- mapM (pp kenv) $ reverse ps
               con' <- pprJudgement kenv (S.empty, []) con
               return ("\\nfrac{\n" ++ intercalate "\n\\quad\n" ps' ++
                       "}{\n" ++ con' ++ "\n}")
-          pprvar x@(KindRef kn, os) = do
-            cfgVarMap $ mconcat $ map objTypeVars os
+          pprvar kr@(KindRef kn) = do
+            cfgVarMaps (S.fromList $ zip trs ts) S.empty
             asRule rulename $
-              pprJudgement kenv (S.empty, [x]) x
-                where rulename = ("Var-" ++ name ++ kn)
+              pprJudgement kenv (S.empty, [(kr, vs)]) (kr, vs)
+                where rulename = "Var-" ++ name ++ "-" ++ kn
+                      trs      = map (TypeRef . (:[])) ['a'..]
+                      vs       = zipWith Var trs ts
+                      ts       = kenv kr
 
 asRule :: Monad m => String -> m String -> m String
 asRule label body = do
@@ -218,9 +230,8 @@ asRule label body = do
           "\\quad" ++ ruleLabel label ++ 
           "\n\\end{displaymath}\n")
 
-type PremisePrinter m =
-    (KindRef -> S.Set (KindRef, [Object]))
-    -> Judgement -> m String
+type PremisePrinter m = (KindRef -> [Type])
+                      -> Judgement -> m String
 
 premiseWithEnv :: MonadPrint m => PremisePrinter m
 premiseWithEnv kenv ((vs, ps), kr, os) =
@@ -240,10 +251,7 @@ premiseWithContext kenv ((_, ps), kr, os) = do
 
 \begin{code}
 ruleLabel :: String -> String
-ruleLabel tn = "\\textsc{" ++ (texescape . capitalise  . pretty) tn ++ "}"
-    where pretty ('_':c:s) = '-' : c : pretty s
-          pretty (c:s)     = c : pretty s
-          pretty []        = []
+ruleLabel tn = "\\textsc{" ++ (texescape . capitalise) tn ++ "}"
 \end{code}
 
 \section{Monad}
@@ -253,9 +261,11 @@ data PrintConf m = PrintConf
   { prettyTypeApp   :: Prettifier KindRef m
   , prettyConstApp  :: Prettifier TypeRef m
   , prettyTypeVar   :: TypeVarPrinter m
+  , prettyMetaVar   :: TypeVarPrinter m
   , prettyRuleSym   :: SymPrettifier m
   , prettyJudgement :: JudgementPrinter m
   , premisePrinter  :: PremisePrinter m
+  , bound_vars      :: S.Set TypeRef
   }
 
 emptyPrintConf :: MonadPrint m => PrintConf m
@@ -263,9 +273,11 @@ emptyPrintConf = PrintConf
   { prettyTypeApp   = defPrettyTypeApp
   , prettyConstApp  = defPrettyConstApp
   , prettyTypeVar   = defPrettyTypeVar
+  , prettyMetaVar   = defPrettyMetaVar
   , prettyRuleSym   = defPrettyRuleSym
   , prettyJudgement = judgementWithEnv
   , premisePrinter  = premiseWithEnv 
+  , bound_vars      = S.empty
   }
 
 pprJudgement :: MonadPrint m => JudgementPrinter m
@@ -290,17 +302,22 @@ type NameContext = M.Map KindRef (M.Map FreeVarContext TypeRef)
 data PrintEnv = PrintEnv 
     { name_context :: NameContext
     , type_vars :: M.Map Type (M.Map TypeRef String)
+    , meta_vars :: M.Map Type (M.Map TypeRef String)
     }
 
 emptyPrintEnv :: PrintEnv
 emptyPrintEnv = PrintEnv { name_context = M.empty
-                         , type_vars    = M.empty }
+                         , type_vars    = M.empty
+                         , meta_vars    = M.empty }
 
 pprTypeVar :: MonadPrint m => TypeVarPrinter m
-pprTypeVar tr kr = do
-  tv <- getsPrintEnv type_vars
-  maybe (error $ "Internal error" ++ show tr ++ show kr ++ show tv) return $ do
-    M.lookup tr =<< M.lookup (TyKind kr) tv
+pprTypeVar tr ty = do
+  bvs <- asksPrintConf bound_vars
+  vm  <- getsPrintEnv (if tr `S.member` bvs
+                       then meta_vars else type_vars)
+  maybe (error $ "Internal error" ++ show tr ++ " " ++ show ty ++ " "
+                   ++ show bvs ++ " " ++ show vm) return $ do
+    M.lookup tr =<< M.lookup ty vm
 \end{code}
 
 \begin{code}
@@ -317,6 +334,11 @@ class Monad m => MonadPrint m where
 
     askPrintConf  :: m (PrintConf m)
     asksPrintConf :: (PrintConf m -> a) -> m a
+    withPrintConf :: (PrintConf m -> PrintConf m) -> m a -> m a
+
+bindingVar :: MonadPrint m => TypeRef -> m a -> m a
+bindingVar tr = withPrintConf (\e ->
+  e { bound_vars = S.insert tr $ bound_vars e } )
 \end{code}
 
 \section{Rendering production rules}
@@ -333,17 +355,21 @@ prettyProd :: MonadPrint m => Signature
            -> ProdRule
            -> m String
 prettyProd sig ku@(kr, _) prod@(ts, vars) = do
-  cfgVarMap =<< prodRuleTypeVars sig ku prod
-  tr   <- namer sig ku
-  name <- pprTypeVar tr kr
-  terms <- mapM (prettySymbol sig) $ M.toList ts
-  let terms' = if vars 
-               then ("\\$"++prettyName name) : terms
-               else terms
+  tvs    <- prodRuleTypeVars sig ku prod
+  mvs    <- prodRuleMetaVars sig ku prod
+  tr@(TypeRef tn) <- namer sig ku
+  let tr' = TypeRef $ "$" ++ capitalise tn
+  cfgVarMaps tvs mvs
+  name   <- pprTypeVar tr (TyKind kr)
+  terms  <- mapM (prettySymbol sig) $ M.toList ts
+  terms' <- if vars
+            then liftM (:terms) (bindingVar tr' $
+                                   pprTypeVar tr' (TyKind kr))
+            else return terms
   return ("\\begin{tabular}{rl}\n$" ++
           texescape name ++ "$ ::=& $" ++ 
-          intercalate "$\\\\ \n $\\mid$ & $" terms' ++ "$\n" ++
-          "\\end{tabular}\n")
+          intercalate "$\\\\ \n $\\mid$ & $" terms' ++
+          "$\n" ++ "\\end{tabular}\n")
 \end{code}
 
 \begin{code}
@@ -362,10 +388,12 @@ defPrettyRuleSym sig (TypeRef tn, ts) = do
   return $ prettyName tn ++ "(" ++ args ++ ")"
       where prettyPremise ([], ku@(kr, _)) = do
               tr <- namer sig ku
-              pprTypeVar tr kr
-            prettyPremise (KindRef kn:tms, ka) = do
+              pprTypeVar tr (TyKind kr)
+            prettyPremise (kr@(KindRef kn):tms, ka) = do
+              let tr = TypeRef $ "$" ++ capitalise kn
               more <- prettyPremise (tms, ka)
-              return (("\\$" ++ prettyName kn ++ ".") ++ more)
+              s    <- bindingVar tr $ pprTypeVar tr (TyKind kr)
+              return (s ++ "." ++ more)
 \end{code}
 
 \begin{code}
@@ -402,18 +430,26 @@ prodRuleTypeVars :: MonadPrint m => Signature
                  -> ProdRule 
                  -> m (S.Set (TypeRef, Type))
 prodRuleTypeVars sig ku@(kr, _) (syms, _) = do
-  s <- liftM (mconcat . concat) (mapM symvars $ M.toList syms)
+  s <- liftM (S.fromList . concat) (mapM symvars $ M.toList syms)
   tr <- namer sig ku
   return $ S.insert (tr, TyKind kr) s
+    where symvars (_, ps) =
+            forM ps $ \(_, ku'@(kr', _)) -> do
+              tr <- namer sig ku'
+              return (tr, TyKind kr')
+
+prodRuleMetaVars :: MonadPrint m => Signature
+                 -> KindUsage
+                 -> ProdRule
+                 -> m (S.Set (TypeRef, Type))
+prodRuleMetaVars sig _ (syms, _) = do
+  liftM (mconcat . concat) (mapM symvars $ M.toList syms)
     where symvars (_, ps) = do
-            liftM mconcat (mapM premvars ps)
-          premvars (krs, ku'@(kr', _)) = do
-            tr <- namer sig ku'
-            let s = S.singleton (tr, TyKind kr')
-            liftM (s:) (mapM f krs)
+            liftM mconcat (mapM (mapM f . fst) ps)
           f kr' = do
-            tr <- namer sig (kr', c)
-            return $ S.singleton (tr, TyKind kr')
+            TypeRef tn <- namer sig (kr', c)
+            return $ S.singleton ( TypeRef $ "$" ++ capitalise tn
+                                 , TyKind kr')
                 where c = initContext kr' $
                           fromJust $ M.lookup kr' sig
 \end{code}

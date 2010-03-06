@@ -21,7 +21,8 @@ module TwelfPPR.InfGen ( InfRules(..)
                        , Conclusion
                        , pprAsInfRules
                        , judgeEnv
-                       , infRuleTypeVars ) 
+                       , infRuleTypeVars
+                       , infRuleMetaVars ) 
     where
 
 import Data.List
@@ -51,7 +52,7 @@ same kind as the judgement definition describes, as that would be the
 original criteria for inclusion.
 
 \begin{code}
-data InfRules = InfRules KindRef (M.Map TypeRef InfRule)
+data InfRules = InfRules KindRef Kind (M.Map TypeRef InfRule)
 data InfRule = InfRule [Judgement] Conclusion
 type Judgement = (JudgementEnv, KindRef, [Object])
 type JudgementEnv = (S.Set TypeRef, [(KindRef, [Object])])
@@ -64,15 +65,15 @@ the kind to its corresponding inference rule.
 
 \begin{code}
 pprAsInfRules :: (KindRef, KindDef) -> InfRules
-pprAsInfRules (kr, KindDef ms) = 
-  InfRules kr $ M.map pprAsRule ms
+pprAsInfRules (kr, KindDef k ms) = 
+  InfRules kr k $ M.map pprAsRule ms
 \end{code}
 
 \begin{code}
-judgeEnv :: InfRules -> S.Set (KindRef, [Object])
-judgeEnv (InfRules _ m) = S.fromList $ concatMap (ruleEnv . snd) $ M.toList m
-    where ruleEnv (InfRule ps _) = concatMap premEnv ps
-          premEnv ((_, e), _, _) = e
+judgeEnv :: InfRules -> S.Set KindRef
+judgeEnv (InfRules _ _ m) = S.fromList $ concatMap (ruleEnv . snd) $ M.toList m
+    where ruleEnv (InfRule ps _) = concatMap judgEnv ps
+          judgEnv ((_, ce), _, _) = map fst ce
 \end{code}
 
 \begin{code}
@@ -134,7 +135,15 @@ by a given inference rule.
 infRuleTypeVars :: InfRule -> S.Set (TypeRef, Type)
 infRuleTypeVars (InfRule js (_, os)) =
   foldl S.union (ovars os) $ map jvars js
-    where ovars = mconcat . map objTypeVars
+    where ovars = mconcat . map objFreeVars
+          jvars (je, _, os') = jevars je `S.union` ovars os'
+          jevars (_, aps) =
+            mconcat $ map (ovars . snd) aps
+
+infRuleMetaVars :: InfRule -> S.Set (TypeRef, Type)
+infRuleMetaVars (InfRule js (_, os)) =
+  foldl S.union (ovars os) $ map jvars js
+    where ovars = mconcat . map objBoundVars
           jvars (je, _, os') = jevars je `S.union` ovars os'
           jevars (_, aps) =
             mconcat $ map (ovars . snd) aps

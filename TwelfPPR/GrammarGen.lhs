@@ -135,7 +135,7 @@ premises are constant.
 
 \begin{code}
 prodRulePossible :: KindDef -> Bool
-prodRulePossible (KindDef ms) = all check $ M.elems ms
+prodRulePossible (KindDef _ ms) = all check $ M.elems ms
     where check (TyCon _ _ t)       = check t
           check (TyKind _)          = True
           check _                   = False
@@ -183,8 +183,8 @@ pprWithContext :: Contexter
                -> FreeVarContext
                -> (KindRef, KindDef)
                -> ProdRule
-pprWithContext con c (kr, KindDef ms) = 
-  (syms, kr `S.member` c && (hasVar kr $ KindDef ms))
+pprWithContext con c (kr, KindDef k ms) = 
+  (syms, kr `S.member` c && (hasVar kr $ KindDef k ms))
     where syms = M.map (typeSymbol con c) ms
 \end{code}
 
@@ -222,7 +222,7 @@ type families used as parameters in the premise.
 
 \begin{code}
 hasVar :: KindRef -> KindDef -> Bool
-hasVar kr (KindDef fam) = any (typeHasVar) $ M.elems fam
+hasVar kr (KindDef _ fam) = any (typeHasVar) $ M.elems fam
     where typeHasVar    = any premiseHasVar . premises 
           premiseHasVar = isJust . find (==TyKind kr) . premises
 

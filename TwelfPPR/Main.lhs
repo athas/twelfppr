@@ -67,7 +67,7 @@ data PPRConfig = PPRConfig {
     , default_type   :: Maybe FileType
     , ignore_vars    :: Bool
     , annofile_path  :: Maybe String
-    , use_environs   :: Bool
+    , use_contexts   :: Bool
     }
 
 defaultConfig :: PPRConfig
@@ -77,7 +77,7 @@ defaultConfig = PPRConfig {
                 , default_type   = Nothing
                 , ignore_vars    = False
                 , annofile_path  = Nothing
-                , use_environs   = True
+                , use_contexts   = True
                 }
 \end{code}
 
@@ -118,9 +118,15 @@ instance MonadPrint PPR where
     putPrintEnv pe = modify $ \e -> e { print_env = pe }
     askPrintConf = gets print_conf
     asksPrintConf f = gets (f . print_conf)
+    withPrintConf f m = do
+      old <- gets print_conf
+      modify (\s -> s { print_conf = f old } )
+      v <- m
+      modify (\s -> s { print_conf = old } )
+      return v
 
-runPPR :: PPRConfig -> PPR a -> IO a
-runPPR conf (PPR m) = evalStateT (runReaderT m conf) =<< env
+runPPR :: PPR a -> PPRConfig -> IO a
+runPPR (PPR m) conf = evalStateT (runReaderT m conf) =<< env
     where env = envFromConf conf
 
 envFromConf :: PPRConfig -> IO PPREnv
@@ -137,7 +143,7 @@ printConfFromConf conf =
              , premisePrinter  = pp
              }
       where (pj, pp)
-                | use_environs conf =
+                | use_contexts conf =
                     (judgementWithEnv,
                      premiseWithEnv)
                 | otherwise         =
@@ -164,17 +170,21 @@ ppr sig = newlines <$> liftM2 (++) prods infs
             mapM_ fprod . filter (prodRulePossible . snd) $ defs
             rules <- M.toList <$> getsGGenEnv prod_rules
             mapM (uncurry $ prettyProd sig) rules
-          infs  = mapM judge nonprods
+          infs  = do let irs = map pprinf nonprods
+                     let kenv kr =
+                             case M.lookup kr (M.fromList irs) of
+                               Just (InfRules _ k _) -> kargs k
+                               Nothing -> error "Unknown kind reference"
+                     mapM (prettyRules kenv) (map snd irs)
+          pprinf (kr, kd) = (kr, pprAsInfRules (kr, kd))
           nonprods = filter (not . prodRulePossible . snd) $ defs
-          judge = prettyRules kenv . pprAsInfRules
-          kenv kr = judgeEnv . pprAsInfRules 
-                    . ((,)kr) . fromJust
-                    . flip M.lookup sig $ kr
+          kargs KiType = []
+          kargs (KiCon _ ty k) = ty : kargs k
 \end{code}
 
 \begin{code}
 twelfppr :: PPRConfig -> IO ()
-twelfppr conf = runPPR conf m
+twelfppr conf = runPPR m conf
     where m = do
             t     <- getType path
             decls <- case t of
@@ -197,12 +207,13 @@ maybeReadAnnotations = do
     Just af -> do 
       c <- liftIO $ readFile af
       let annos = either (error . show) id (parseAnnotations af c)
-          (pka, pta, ptv, prs) = prettifiers annos
+          (pka, pta, ptv, pmv, prs) = prettifiers annos
       modify $ \s -> s {
         print_conf = (print_conf s) 
                      { prettyTypeApp  = pka
                      , prettyConstApp = pta
                      , prettyTypeVar  = ptv
+                     , prettyMetaVar  = pmv
                      , prettyRuleSym  = prs } }
 \end{code}
 
