@@ -227,10 +227,9 @@ judgementNoContext _ _ = uncurry pprTypeApp
 
 \begin{code}
 prettyAllRules :: MonadPrint m =>
-                  (KindRef -> [Type])
-               -> String
-               -> [InfRules] -> m String
-prettyAllRules kenv prefix irss = do
+                  (KindRef -> [Type]) -> Bool
+               -> String -> [InfRules] -> m String
+prettyAllRules kenv con prefix irss = do
   (js, rss, rs) <- liftM (foldl f (def, def, def)) rules
   return (   rulecmd rs ++ "\n"
           ++ rulescmd rss
@@ -240,7 +239,7 @@ prettyAllRules kenv prefix irss = do
                                      , foldl (flip (++) . braces)
                                        (braces az) z)
           def = "{\\PackageError{twelfppr}{Unknown definition}{}}"
-          rules = mapM (prettyRules kenv) irss
+          rules = mapM (prettyRules kenv con) irss
           rulecmd  = newcommand (prefix ++ "rule") 1
           rulescmd = newcommand (prefix ++ "rules") 1
           judgecmd = newcommand (prefix ++ "judgement") 1
@@ -248,11 +247,13 @@ prettyAllRules kenv prefix irss = do
 
 \begin{code}
 prettyRules :: MonadPrint m => 
-               (KindRef -> [Type])
+               (KindRef -> [Type]) -> Bool
             -> InfRules -> m (String, String, [String])
-prettyRules kenv irs@(InfRules kr@(KindRef name) _ rules) = do
+prettyRules kenv con irs@(InfRules kr@(KindRef name) _ rules) = do
   rules'   <- mapM procRule rules
-  envrules <- mapM procVar $ S.toList $ judgeEnv irs
+  envrules <- if con
+              then mapM procVar $ S.toList $ judgeEnv irs
+              else return []
   judgem   <- prettyJudgementForm kenv kr
   let allrules = ifbranch
                    (name,
@@ -283,8 +284,8 @@ prettyRule kenv (TypeRef tn, ir@(InfRule ps con)) = do
     pp   <- asksPrintConf premisePrinter
     ps'  <- mapM (pp kenv) $ reverse ps
     con' <- pprJudgement kenv (S.empty, []) con
-    return ("\\nfrac{\n" ++ intercalate "\n\\quad\n" ps' ++
-            "}{\n" ++ con' ++ "\n}")
+    return ("\\frac{\\displaystyle{\n" ++ intercalate "\n\\quad\n" ps' ++
+            "}}{\\displaystyle{\n" ++ con' ++ "\n}}")
 
 prettyVarRule :: MonadPrint m => 
                  (KindRef -> [Type])
@@ -304,7 +305,7 @@ prettyJudgementForm :: MonadPrint m =>
 prettyJudgementForm kenv kr = do
   cfgVarMaps (S.fromList $ zip trs ts) S.empty
   s <- pprJudgement kenv (S.empty, []) (kr, vs)
-  return ("\\fbox" ++ braces ("$" ++ s ++ "$"))
+  return ("\\fbox" ++ braces ("\\ensuremath{" ++ s ++ "}"))
       where trs = map (TypeRef . (:[])) ['a'..]
             vs  = zipWith Var trs ts
             ts  = kenv kr
@@ -330,8 +331,8 @@ premiseWithHypoJudgs kenv ((_, ps), kr, os) = do
   ps'  <- liftM concat $ mapM proc ps
   return $ "{{" ++ ps' ++ "}\\atop" ++ "{\n" ++ con ++ "\n}}"
       where proc p = do p' <- pprJudgement kenv (S.empty, []) p
-                        return ("{\\nfrac{}{" ++ p' ++
-                                   "}\\atop{\\vdots}}")
+                        return ("{\\overline{\\displaystyle{" ++ p' ++
+                                   "}}\\atop{\\vdots}}")
 \end{code}
 
 \begin{code}

@@ -163,6 +163,7 @@ or a judgement, separating each type family with a newline.
 ppr :: Signature -> PPR String
 ppr sig = do
   prefix <- asks texcmd_prefix
+  con <- asks use_contexts
   prods <- do
     simple <- asks ignore_vars
     let fprod = (pprAsProd sig $
@@ -176,7 +177,7 @@ ppr sig = do
     let kenv kr = case M.lookup kr (M.fromList irs) of
                     Just (InfRules _ k _) -> kargs k
                     Nothing -> error "Unknown kind reference"
-    prettyAllRules kenv prefix (map snd irs)
+    prettyAllRules kenv con prefix (map snd irs)
   return $ infs ++ "\n" ++ prods
     where defs = M.toList sig
           pprinf (kr, kd) = (kr, pprAsInfRules (kr, kd))
