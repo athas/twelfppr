@@ -44,7 +44,6 @@ import qualified Data.Map as M
 
 import Text.Parsec hiding ((<|>), many, optional)
 import Text.Parsec.String
-import Text.Regex
 
 import TwelfPPR.LF
 import TwelfPPR.Parser
@@ -106,13 +105,13 @@ prettifyVar :: MonadPrint m =>
                TypeVarPrinter m 
             -> M.Map Type String 
             -> TypeVarPrinter m
-prettifyVar def dm tr@(TypeRef tn) ty =
+prettifyVar def dm tr ty =
   case M.lookup (TyKind $ end ty) dm of
     Nothing -> def tr ty
-    Just  s -> case matchRegex r tn of
-      Just [_, i] -> return $ s ++ "_{" ++ i ++ "}"
-      _           -> return s
-   where r   = mkRegex "([^0-9]+)([0-9]+)"
+    Just  s -> return (s ++ sub idx ++ replicate ps '\'')
+   where (_, idx, ps) = splitVar tr
+         sub Nothing  = ""
+         sub (Just i) = "_{" ++ show i ++ "}"
          end (TyKind kr)    = kr
          end (TyCon _ _ ty') = end ty'
          end (TyApp ty' _)   = end ty'

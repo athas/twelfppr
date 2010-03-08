@@ -44,13 +44,11 @@ module TwelfPPR.Pretty ( prettyAllRules
                        , premiseWithContext
                        , judgementWithContext
                        , judgementNoContext
-                       , premiseWithHypoJudgs )
+                       , premiseWithHypoJudgs
+                       , splitVar )
     where
 
 import Control.Monad.Reader
-
-import System.IO.Unsafe
-import System.IO
 
 import Data.Char
 import Data.List
@@ -75,40 +73,58 @@ varMap :: MonadPrint m =>
           m (TypeVarPrinter m)
        -> S.Set (TypeRef, Type) 
        -> m (M.Map Type (M.Map TypeRef String))
-varMap p s = liftM M.fromList (mapM (procVars p) $ M.toList table)
-    where table = foldl f M.empty $ S.toList s
-          f m (tr, t) = M.insertWith (++) t [tr] m
+varMap p s = do
+  procVars p $ S.toList s
 
-splitVar :: TypeRef -> (String, Maybe Integer)
+splitVar :: TypeRef -> (String, Maybe Integer, Int)
 splitVar (TypeRef tn) =
   case matchRegex r tn of
-    Just [name, i] -> (name, Just $ read i)
-    _              -> (tn, Nothing)
-    where r = mkRegex "([^0-9]+)([0-9]+)"
+    Just [name, "", ps] -> (name, Nothing, length ps)
+    Just [name, i, ps]  -> (name, Just $ read i, length ps)
+    _                   -> (tn, Nothing, 0)
+    where r = mkRegex "([^0-9']+)([0-9]*)('*)"
 
 procVars :: MonadPrint m =>
             m (TypeVarPrinter m)
-         -> (Type, [TypeRef])
-         -> m (Type, M.Map TypeRef String)
-procVars p (ty, trs) = do
-  tm <- mapM proc $ uniqify trs []
-  return (ty, M.fromList tm)
-    where proc (tr, tr') = do
+         -> [(TypeRef, Type)]
+         -> m (M.Map Type (M.Map TypeRef String))
+procVars p l = do
+  vs <- uniqify proc l S.empty
+  return $ table vs
+    where proc tr ty = do
             pt <- p
-            s  <- pt tr' ty
-            return (tr, s)
+            s  <- pt tr ty
+            return s
+          table = foldl f M.empty
+          f m (ty, (tr, s)) =
+            M.insertWith (M.union) ty (M.singleton tr s) m
 
-uniqify :: [TypeRef]
-        -> [((TypeRef, TypeRef), Maybe Integer)]
-        -> [(TypeRef, TypeRef)]
-uniqify [] seen = map fst seen
-uniqify (tr:trs) seen =
-  uniqify trs (((tr, tr'), idx'):seen)
-    where (name, idx) = splitVar tr
-          tr' = TypeRef (name ++ maybe "" show idx')
-          idx' | elem idx (map snd seen) =
-                   Just (1 + maximum (0:catMaybes (map snd seen)))
-               | otherwise = idx
+uniqify :: MonadPrint m =>
+           TypeVarPrinter m
+        -> [(TypeRef, Type)]
+        -> S.Set String
+        -> m [(Type, (TypeRef, String))]
+uniqify _ [] _ = return []
+uniqify p ((tr, ty):ts) seen = do
+  s <- realUniq p (tr, ty) seen
+  more <- uniqify p ts $ s `S.insert` seen
+  return $ (ty, (tr, s)):more
+
+realUniq :: MonadPrint m =>
+            TypeVarPrinter m
+         -> (TypeRef, Type)
+         -> S.Set String
+         -> m String
+realUniq p (tr, ty) seen = do
+  s <- p tr ty
+  case (s `S.member` seen) of
+    True  -> realUniq p (tr', ty) seen
+    False -> return s
+    where (name, idx, ps) = splitVar tr
+          tr' = TypeRef (name ++
+                         show idx' ++
+                         replicate ps '\'')
+          idx' = maybe 1 (1+) idx
 
 cfgVarMaps :: MonadPrint m => 
              S.Set (TypeRef, Type)
@@ -219,9 +235,10 @@ prettyAllRules kenv prefix irss = do
   return (   rulecmd rs ++ "\n"
           ++ rulescmd rss
           ++ judgecmd js)
-    where f (ax, ay, az) (x, y, z) = (x++braces ax,
-                                      y++braces ay,
-                                      z++braces az)
+    where f (ax, ay, az) (x, y, z) = ( x++braces ax
+                                     , y++braces ay
+                                     , foldl (flip (++) . braces)
+                                       (braces az) z)
           def = "{\\PackageError{twelfppr}{Unknown definition}{}}"
           rules = mapM (prettyRules kenv) irss
           rulecmd  = newcommand (prefix ++ "rule") 1
@@ -232,7 +249,7 @@ prettyAllRules kenv prefix irss = do
 \begin{code}
 prettyRules :: MonadPrint m => 
                (KindRef -> [Type])
-            -> InfRules -> m (String, String, String)
+            -> InfRules -> m (String, String, [String])
 prettyRules kenv irs@(InfRules kr@(KindRef name) _ rules) = do
   rules'   <- mapM procRule rules
   envrules <- mapM procVar $ S.toList $ judgeEnv irs
@@ -244,7 +261,7 @@ prettyRules kenv irs@(InfRules kr@(KindRef name) _ rules) = do
                       (map snd $ envrules ++ rules'))
   let branches = map ifbranch (envrules ++ rules')
   let judgebranch = ifbranch (name, judgem)
-  return (judgebranch, allrules, intercalate "\n" branches)
+  return (judgebranch, allrules, branches)
       where procRule tr'@(TypeRef tn', _) = do
               body <- prettyRule kenv tr'
               return (argescape tn', body)
