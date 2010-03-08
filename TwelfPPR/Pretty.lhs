@@ -18,7 +18,9 @@
 This module defines primitives for printing Twelf terms by themselves.
 
 \begin{code}
-module TwelfPPR.Pretty ( PrintConf(..)
+module TwelfPPR.Pretty ( prettyAllRules
+                       , prettyAllProds
+                       , PrintConf(..)
                        , emptyPrintConf
                        , SymPrettifier
                        , Prettifier
@@ -39,13 +41,16 @@ module TwelfPPR.Pretty ( PrintConf(..)
                        , prettyName
                        , prettyProd
                        , prettyRules
-                       , premiseWithEnv
-                       , judgementWithEnv
-                       , judgementNoEnv
-                       , premiseWithContext )
+                       , premiseWithContext
+                       , judgementWithContext
+                       , judgementNoContext
+                       , premiseWithHypoJudgs )
     where
 
 import Control.Monad.Reader
+
+import System.IO.Unsafe
+import System.IO
 
 import Data.Char
 import Data.List
@@ -58,6 +63,7 @@ import Text.Regex
 
 import TwelfPPR.InfGen
 import TwelfPPR.GrammarGen
+import TwelfPPR.LaTeX
 import TwelfPPR.LF
 import TwelfPPR.Util
 \end{code}
@@ -156,6 +162,12 @@ defPrettyMetaVar (TypeRef tn) _ = return $ prettyVar tn
 \end{code}
 
 \begin{code}
+prettyName :: String -> String
+prettyName s = "\\textrm{" ++ s' ++ "}"
+    where s' = texescape $ capitalise s
+\end{code}
+
+\begin{code}
 pprObject :: MonadPrint m => Object -> m String
 pprObject (Const tr) =
   pprConstApp tr []
@@ -184,63 +196,119 @@ pprObject (App o1 o2) = descend o1 [o2]
 type JudgementPrinter m =
     (KindRef -> [Type]) -> JudgementEnv -> Conclusion -> m String
 
-judgementWithEnv :: MonadPrint m => JudgementPrinter m
-judgementWithEnv kenv (_, vs) (kr, os) = do
+judgementWithContext :: MonadPrint m => JudgementPrinter m
+judgementWithContext kenv (_, vs) (kr, os) = do
   liftM2 (++) env (pprTypeApp kr os)
       where env | kenv kr /= []  = do
-                    vars' <- liftM (concatMap $ \s -> "\\{" ++ s ++ "\\}")
+                    vars' <- liftM (concatMap (","++))
                              (mapM (uncurry pprTypeApp) vs)
                     return ("\\Gamma " ++ vars' ++ "\\vdash")
                 | otherwise = return ""
 
-judgementNoEnv :: MonadPrint m => JudgementPrinter m
-judgementNoEnv _ _ = uncurry pprTypeApp
+judgementNoContext :: MonadPrint m => JudgementPrinter m
+judgementNoContext _ _ = uncurry pprTypeApp
+\end{code}
+
+\begin{code}
+prettyAllRules :: MonadPrint m =>
+                  (KindRef -> [Type])
+               -> String
+               -> [InfRules] -> m String
+prettyAllRules kenv prefix irss = do
+  (js, rss, rs) <- liftM (foldl f (def, def, def)) rules
+  return (   rulecmd rs ++ "\n"
+          ++ rulescmd rss
+          ++ judgecmd js)
+    where f (ax, ay, az) (x, y, z) = (x++braces ax,
+                                      y++braces ay,
+                                      z++braces az)
+          def = "{\\PackageError{twelfppr}{Unknown definition}{}}"
+          rules = mapM (prettyRules kenv) irss
+          rulecmd  = newcommand (prefix ++ "rule") 1
+          rulescmd = newcommand (prefix ++ "rules") 1
+          judgecmd = newcommand (prefix ++ "judgement") 1
 \end{code}
 
 \begin{code}
 prettyRules :: MonadPrint m => 
                (KindRef -> [Type])
-            -> InfRules -> m String
-prettyRules kenv irs@(InfRules (KindRef name) _ rules) = do
-  rules'   <- mapM ppr $ M.toList rules
-  envrules <- mapM pprvar $ S.toList $ judgeEnv irs
-  return $ "[" ++ name ++ "]\n" ++ concatMap (++"\n") (rules' ++ envrules)
-    where ppr (TypeRef tn, ir@(InfRule ps con)) = do
-            cfgVarMaps (infRuleTypeVars ir)
-                       (infRuleMetaVars ir)
-            asRule tn $ do
-              pp   <- asksPrintConf premisePrinter
-              ps'  <- mapM (pp kenv) $ reverse ps
-              con' <- pprJudgement kenv (S.empty, []) con
-              return ("\\nfrac{\n" ++ intercalate "\n\\quad\n" ps' ++
-                      "}{\n" ++ con' ++ "\n}")
-          pprvar kr@(KindRef kn) = do
-            cfgVarMaps (S.fromList $ zip trs ts) S.empty
-            asRule rulename $
-              pprJudgement kenv (S.empty, [(kr, vs)]) (kr, vs)
-                where rulename = "Var-" ++ name ++ "-" ++ kn
-                      trs      = map (TypeRef . (:[])) ['a'..]
-                      vs       = zipWith Var trs ts
-                      ts       = kenv kr
+            -> InfRules -> m (String, String, String)
+prettyRules kenv irs@(InfRules kr@(KindRef name) _ rules) = do
+  rules'   <- mapM procRule rules
+  envrules <- mapM procVar $ S.toList $ judgeEnv irs
+  judgem   <- prettyJudgementForm kenv kr
+  let allrules = ifbranch
+                   (name,
+                    judgem ++ "\n" ++
+                    intercalate "\n" 
+                      (map snd $ envrules ++ rules'))
+  let branches = map ifbranch (envrules ++ rules')
+  let judgebranch = ifbranch (name, judgem)
+  return (judgebranch, allrules, intercalate "\n" branches)
+      where procRule tr'@(TypeRef tn', _) = do
+              body <- prettyRule kenv tr'
+              return (argescape tn', body)
+            procVar kr'@(KindRef kn') = do
+              body <- prettyVarRule kenv name kr'
+              return ( argescape $ "var " ++ name ++ " " ++ kn'
+                     , body)
+            ifbranch (check, body) =
+              ifthenbranch (argescape check) body
+
+prettyRule :: MonadPrint m => 
+              (KindRef -> [Type])
+           -> (TypeRef, InfRule)
+           -> m String
+prettyRule kenv (TypeRef tn, ir@(InfRule ps con)) = do
+  cfgVarMaps (infRuleTypeVars ir)
+             (infRuleMetaVars ir)
+  asRule tn $ do
+    pp   <- asksPrintConf premisePrinter
+    ps'  <- mapM (pp kenv) $ reverse ps
+    con' <- pprJudgement kenv (S.empty, []) con
+    return ("\\nfrac{\n" ++ intercalate "\n\\quad\n" ps' ++
+            "}{\n" ++ con' ++ "\n}")
+
+prettyVarRule :: MonadPrint m => 
+                 (KindRef -> [Type])
+              -> String -> KindRef -> m String
+prettyVarRule kenv name kr@(KindRef kn) = do
+  cfgVarMaps (S.fromList $ zip trs ts) S.empty
+  asRule rulename $
+    pprJudgement kenv (S.empty, [(kr, vs)]) (kr, vs)
+      where rulename = name ++ "-" ++ "var" ++ "-" ++ kn
+            trs      = map (TypeRef . (:[])) ['a'..]
+            vs       = zipWith Var trs ts
+            ts       = kenv kr
+
+prettyJudgementForm :: MonadPrint m =>
+                       (KindRef -> [Type])
+                    -> KindRef -> m String
+prettyJudgementForm kenv kr = do
+  cfgVarMaps (S.fromList $ zip trs ts) S.empty
+  s <- pprJudgement kenv (S.empty, []) (kr, vs)
+  return ("\\fbox" ++ braces ("$" ++ s ++ "$"))
+      where trs = map (TypeRef . (:[])) ['a'..]
+            vs  = zipWith Var trs ts
+            ts  = kenv kr
 
 asRule :: Monad m => String -> m String -> m String
 asRule label body = do
   body' <- body
-  return ("\\begin{displaymath}\n" ++ body' ++
-          "\\quad" ++ ruleLabel label ++ 
-          "\n\\end{displaymath}\n")
+  return (inEnv "align*" Nothing $
+            body' ++ ruleLabel label)
 
 type PremisePrinter m = (KindRef -> [Type])
                       -> Judgement -> m String
 
-premiseWithEnv :: MonadPrint m => PremisePrinter m
-premiseWithEnv kenv ((vs, ps), kr, os) =
+premiseWithContext :: MonadPrint m => PremisePrinter m
+premiseWithContext kenv ((vs, ps), kr, os) =
   pprJudgement kenv (vs, ps) (kr, os)
 
-premiseWithContext :: MonadPrint m => PremisePrinter m
-premiseWithContext kenv ((_, []), kr, os) = 
+premiseWithHypoJudgs :: MonadPrint m => PremisePrinter m
+premiseWithHypoJudgs kenv ((_, []), kr, os) = 
   pprJudgement kenv (S.empty, []) (kr, os)
-premiseWithContext kenv ((_, ps), kr, os) = do
+premiseWithHypoJudgs kenv ((_, ps), kr, os) = do
   con <- pprJudgement kenv (S.empty, []) (kr, os)
   ps'  <- liftM concat $ mapM proc ps
   return $ "{{" ++ ps' ++ "}\\atop" ++ "{\n" ++ con ++ "\n}}"
@@ -251,7 +319,7 @@ premiseWithContext kenv ((_, ps), kr, os) = do
 
 \begin{code}
 ruleLabel :: String -> String
-ruleLabel tn = "\\textsc{" ++ (texescape . capitalise) tn ++ "}"
+ruleLabel tn = "\\tag{\\textsc{" ++ (texescape . capitalise) tn ++ "}}"
 \end{code}
 
 \section{Monad}
@@ -275,8 +343,8 @@ emptyPrintConf = PrintConf
   , prettyTypeVar   = defPrettyTypeVar
   , prettyMetaVar   = defPrettyMetaVar
   , prettyRuleSym   = defPrettyRuleSym
-  , prettyJudgement = judgementWithEnv
-  , premisePrinter  = premiseWithEnv 
+  , prettyJudgement = judgementWithContext
+  , premisePrinter  = premiseWithContext 
   , bound_vars      = S.empty
   }
 
@@ -344,9 +412,15 @@ bindingVar tr = withPrintConf (\e ->
 \section{Rendering production rules}
 
 \begin{code}
-prettyName :: String -> String
-prettyName s = "\\textrm{" ++ s' ++ "}"
-    where s' = texescape $ capitalise s
+prettyAllProds :: MonadPrint m => Signature
+               -> String
+               -> [(KindUsage, ProdRule)]
+               -> m String
+prettyAllProds sig prefix prs = do
+  branches <- mapM (uncurry $ prettyProd sig) prs
+  return $ prodcmd $ foldl (\acc x -> x++braces acc) def branches
+      where prodcmd = newcommand (prefix ++ "prod") 1
+            def = "{\\PackageError{twelfppr}{Unknown definition}{}}"
 \end{code}
 
 \begin{code}
@@ -354,22 +428,23 @@ prettyProd :: MonadPrint m => Signature
            -> KindUsage
            -> ProdRule
            -> m String
-prettyProd sig ku@(kr, _) prod@(ts, vars) = do
+prettyProd sig ku@(kr@(KindRef kn), _) prod@(ts, vars) = do
   tvs    <- prodRuleTypeVars sig ku prod
   mvs    <- prodRuleMetaVars sig ku prod
   tr@(TypeRef tn) <- namer sig ku
   let tr' = TypeRef $ "$" ++ capitalise tn
   cfgVarMaps tvs mvs
   name   <- pprTypeVar tr (TyKind kr)
-  terms  <- mapM (prettySymbol sig) $ M.toList ts
+  terms  <- mapM (prettySymbol sig) ts
   terms' <- if vars
             then liftM (:terms) (bindingVar tr' $
                                    pprTypeVar tr' (TyKind kr))
             else return terms
-  return ("\\begin{tabular}{rl}\n$" ++
-          texescape name ++ "$ ::=& $" ++ 
-          intercalate "$\\\\ \n $\\mid$ & $" terms' ++
-          "$\n" ++ "\\end{tabular}\n")
+  return (ifthenbranch (argescape kn) $
+            "\\begin{tabular}{rl}\n$" ++
+            texescape name ++ "$ ::=& $" ++ 
+            intercalate "$\\\\ \n $\\mid$ & $" terms' ++
+            "$\n" ++ "\\end{tabular}\n")
 \end{code}
 
 \begin{code}
@@ -430,7 +505,7 @@ prodRuleTypeVars :: MonadPrint m => Signature
                  -> ProdRule 
                  -> m (S.Set (TypeRef, Type))
 prodRuleTypeVars sig ku@(kr, _) (syms, _) = do
-  s <- liftM (S.fromList . concat) (mapM symvars $ M.toList syms)
+  s <- liftM (S.fromList . concat) (mapM symvars syms)
   tr <- namer sig ku
   return $ S.insert (tr, TyKind kr) s
     where symvars (_, ps) =
@@ -443,7 +518,7 @@ prodRuleMetaVars :: MonadPrint m => Signature
                  -> ProdRule
                  -> m (S.Set (TypeRef, Type))
 prodRuleMetaVars sig _ (syms, _) = do
-  liftM (mconcat . concat) (mapM symvars $ M.toList syms)
+  liftM (mconcat . concat) (mapM symvars syms)
     where symvars (_, ps) = do
             liftM mconcat (mapM (mapM f . fst) ps)
           f kr' = do

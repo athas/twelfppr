@@ -38,6 +38,7 @@ module TwelfPPR.GrammarGen ( GGenEnv(..)
                            , initContext )
     where
 
+import Control.Arrow
 import Control.Monad.State
 import Data.List
 import qualified Data.Map as M
@@ -91,7 +92,7 @@ in the type definitions, but also which kinds can appear as free
 variables in subterms.
 
 \begin{code}
-type ProdRule = (M.Map TypeRef RuleSymbol, Bool)
+type ProdRule = ([(TypeRef, RuleSymbol)], Bool)
 type RuleSymbol = [([KindRef], KindUsage)]
 type KindUsage = (KindRef, FreeVarContext)
 type FreeVarContext = S.Set KindRef
@@ -135,7 +136,7 @@ premises are constant.
 
 \begin{code}
 prodRulePossible :: KindDef -> Bool
-prodRulePossible (KindDef _ ms) = all check $ M.elems ms
+prodRulePossible kd = all check $ defElems kd
     where check (TyCon _ _ t)       = check t
           check (TyKind _)          = True
           check _                   = False
@@ -177,7 +178,7 @@ ensureProds sig con (syms, _) =
         modifyGGenEnv $ \s ->
           s { prod_rules = M.insert (kr, c') prod (prod_rules s) }
         ensureProds sig con prod
-    where krs = concat . map (map snd) . M.elems
+    where krs = concat . map (map snd . snd)
 
 pprWithContext :: Contexter
                -> FreeVarContext
@@ -185,7 +186,7 @@ pprWithContext :: Contexter
                -> ProdRule
 pprWithContext con c (kr, KindDef k ms) = 
   (syms, kr `S.member` c && (hasVar kr $ KindDef k ms))
-    where syms = M.map (typeSymbol con c) ms
+    where syms = map (second $ typeSymbol con c) ms
 \end{code}
 
 A term without premises is printed as its capitalised name, otherwise
@@ -222,7 +223,7 @@ type families used as parameters in the premise.
 
 \begin{code}
 hasVar :: KindRef -> KindDef -> Bool
-hasVar kr (KindDef _ fam) = any (typeHasVar) $ M.elems fam
+hasVar kr kd = any (typeHasVar) $ defElems kd
     where typeHasVar    = any premiseHasVar . premises 
           premiseHasVar = isJust . find (==TyKind kr) . premises
 

@@ -68,6 +68,7 @@ data PPRConfig = PPRConfig {
     , ignore_vars    :: Bool
     , annofile_path  :: Maybe String
     , use_contexts   :: Bool
+    , texcmd_prefix  :: String
     }
 
 defaultConfig :: PPRConfig
@@ -77,7 +78,8 @@ defaultConfig = PPRConfig {
                 , default_type   = Nothing
                 , ignore_vars    = False
                 , annofile_path  = Nothing
-                , use_contexts   = True
+                , use_contexts   = False
+                , texcmd_prefix  = "TPPR"
                 }
 \end{code}
 
@@ -144,11 +146,11 @@ printConfFromConf conf =
              }
       where (pj, pp)
                 | use_contexts conf =
-                    (judgementWithEnv,
-                     premiseWithEnv)
-                | otherwise         =
-                    (judgementNoEnv,
+                    (judgementWithContext,
                      premiseWithContext)
+                | otherwise         =
+                    (judgementNoContext,
+                     premiseWithHypoJudgs)
 \end{code}
 
 \section{Everything else}
@@ -159,23 +161,24 @@ or a judgement, separating each type family with a newline.
 
 \begin{code}
 ppr :: Signature -> PPR String
-ppr sig = newlines <$> liftM2 (++) prods infs
+ppr sig = do
+  prefix <- asks texcmd_prefix
+  prods <- do
+    simple <- asks ignore_vars
+    let fprod = (pprAsProd sig $
+                 if simple then simpleContexter sig
+                 else defaultContexter sig)
+    mapM_ fprod . filter (prodRulePossible . snd) $ defs
+    rules <- M.toList <$> getsGGenEnv prod_rules
+    prettyAllProds sig prefix rules
+  infs  <- do
+    let irs = map pprinf nonprods
+    let kenv kr = case M.lookup kr (M.fromList irs) of
+                    Just (InfRules _ k _) -> kargs k
+                    Nothing -> error "Unknown kind reference"
+    prettyAllRules kenv prefix (map snd irs)
+  return $ infs ++ "\n" ++ prods
     where defs = M.toList sig
-          newlines = intercalate "\n"
-          prods = do
-            simple <- asks ignore_vars
-            let fprod = (pprAsProd sig $
-                         if simple then simpleContexter sig
-                         else defaultContexter sig)
-            mapM_ fprod . filter (prodRulePossible . snd) $ defs
-            rules <- M.toList <$> getsGGenEnv prod_rules
-            mapM (uncurry $ prettyProd sig) rules
-          infs  = do let irs = map pprinf nonprods
-                     let kenv kr =
-                             case M.lookup kr (M.fromList irs) of
-                               Just (InfRules _ k _) -> kargs k
-                               Nothing -> error "Unknown kind reference"
-                     mapM (prettyRules kenv) (map snd irs)
           pprinf (kr, kd) = (kr, pprAsInfRules (kr, kd))
           nonprods = filter (not . prodRulePossible . snd) $ defs
           kargs KiType = []

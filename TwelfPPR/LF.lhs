@@ -27,6 +27,7 @@ module TwelfPPR.LF ( KindRef(..)
                    , Object(..)
                    , Kind(..)
                    , KindDef(..)
+                   , defElems
                    , Signature
                    , freeInType
                    , freeInObj
@@ -36,6 +37,7 @@ module TwelfPPR.LF ( KindRef(..)
                    , objFreeVars
                    , objBoundVars )
     where
+import Text.Regex
 import Data.Maybe
 import qualified Data.Map as M
 import qualified Data.Set as S
@@ -130,8 +132,11 @@ A kind definition maps type names to the actual types (or
 specifically, type families) themselves.
 
 \begin{code}
-data KindDef = KindDef Kind (M.Map TypeRef Type)
+data KindDef = KindDef Kind [(TypeRef, Type)]
                    deriving (Show, Eq)
+
+defElems :: KindDef -> [Type]
+defElems (KindDef _ l) = map snd l
 \end{code}
 
 A Twelf signature is a map of names of kind names to kind definitions.
@@ -207,8 +212,8 @@ all kind applications in the member types.
 
 \begin{code}
 refsInTyFam :: KindDef -> S.Set KindRef
-refsInTyFam (KindDef _ fam) = 
-  foldl S.union S.empty $ map refsInType $ M.elems fam
+refsInTyFam kd = 
+  foldl S.union S.empty $ map refsInType $ defElems kd
 \end{code}
 
 The above definitions only catch immediate references, which will not
@@ -246,4 +251,25 @@ objBoundVars (Lambda tr t o) =
 objBoundVars (App o1 o2) =
   objBoundVars o1 `S.union` objBoundVars o2
 objBoundVars _ = S.empty
+\end{code}
+
+\begin{code}
+splitVar :: TypeRef -> (String, Maybe Integer)
+splitVar (TypeRef tn) =
+  case matchRegex r tn of
+    Just [name, i] -> (name, Just $ read i)
+    _              -> (tn, Nothing)
+    where r = mkRegex "([^0-9]+)([0-9]+)"
+
+uniqify :: [TypeRef]
+        -> [((TypeRef, TypeRef), Maybe Integer)]
+        -> [(TypeRef, TypeRef)]
+uniqify [] seen = map fst seen
+uniqify (tr:trs) seen =
+  uniqify trs (((tr, tr'), idx'):seen)
+    where (name, idx) = splitVar tr
+          tr' = TypeRef (name ++ maybe "" show idx')
+          idx' | elem idx (map snd seen) =
+                   Just (1 + maximum (0:catMaybes (map snd seen)))
+               | otherwise = idx
 \end{code}

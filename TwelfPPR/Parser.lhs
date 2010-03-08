@@ -500,7 +500,7 @@ if its conclusion (see above) is in the type family.
 \begin{code}
 buildFamily :: LF.KindRef -> LF.Kind -> [Decl] -> LF.KindDef
 buildFamily (LF.KindRef s) k =
-  LF.KindDef k . M.fromList . map convert . catMaybes . map pick
+  LF.KindDef k . map convert . catMaybes . map pick
     where pick (DTerm tr t) 
               | ok (conclusion t) = Just (LF.TypeRef tr, t)
           pick _ = Nothing

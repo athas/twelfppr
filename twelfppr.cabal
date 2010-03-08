@@ -22,6 +22,7 @@ executable twelfppr
     build-depends: mtl, unix, time, base==4.*, containers, parsec==3.*, filepath==1.*, process, MonadCatchIO-mtl==0.2.*, regex-compat
     main-is:            TwelfPPR.lhs
     other-modules:      TwelfPPR.InfGen
+                        TwelfPPR.LaTeX
                         TwelfPPR.LF
                         TwelfPPR.Main
                         TwelfPPR.Parser

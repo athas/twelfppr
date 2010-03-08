@@ -25,8 +25,9 @@ module TwelfPPR.InfGen ( InfRules(..)
                        , infRuleMetaVars ) 
     where
 
+import Control.Arrow
+
 import Data.List
-import qualified Data.Map as M
 import Data.Monoid
 import qualified Data.Set as S
 
@@ -52,7 +53,7 @@ same kind as the judgement definition describes, as that would be the
 original criteria for inclusion.
 
 \begin{code}
-data InfRules = InfRules KindRef Kind (M.Map TypeRef InfRule)
+data InfRules = InfRules KindRef Kind [(TypeRef, InfRule)]
 data InfRule = InfRule [Judgement] Conclusion
 type Judgement = (JudgementEnv, KindRef, [Object])
 type JudgementEnv = (S.Set TypeRef, [(KindRef, [Object])])
@@ -66,12 +67,12 @@ the kind to its corresponding inference rule.
 \begin{code}
 pprAsInfRules :: (KindRef, KindDef) -> InfRules
 pprAsInfRules (kr, KindDef k ms) = 
-  InfRules kr k $ M.map pprAsRule ms
+  InfRules kr k $ map (second pprAsRule) ms
 \end{code}
 
 \begin{code}
 judgeEnv :: InfRules -> S.Set KindRef
-judgeEnv (InfRules _ _ m) = S.fromList $ concatMap (ruleEnv . snd) $ M.toList m
+judgeEnv (InfRules _ _ m) = S.fromList $ concatMap (ruleEnv . snd) m
     where ruleEnv (InfRule ps _) = concatMap judgEnv ps
           judgEnv ((_, ce), _, _) = map fst ce
 \end{code}
