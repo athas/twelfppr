@@ -63,7 +63,6 @@ import TwelfPPR.InfGen
 import TwelfPPR.GrammarGen
 import TwelfPPR.LaTeX
 import TwelfPPR.LF
-import TwelfPPR.Util
 \end{code}
 
 \section{Type variables}
@@ -180,7 +179,7 @@ defPrettyMetaVar (TypeRef tn) _ = return $ prettyVar tn
 \begin{code}
 prettyName :: String -> String
 prettyName s = "\\textrm{" ++ s' ++ "}"
-    where s' = texescape $ capitalise s
+    where s' = texescape s
 \end{code}
 
 \begin{code}
@@ -337,7 +336,7 @@ premiseWithHypoJudgs kenv ((_, ps), kr, os) = do
 
 \begin{code}
 ruleLabel :: String -> String
-ruleLabel tn = "\\tag{\\textsc{" ++ (texescape . capitalise) tn ++ "}}"
+ruleLabel tn = "\\tag{\\textsc{" ++ texescape tn ++ "}}"
 \end{code}
 
 \section{Monad}
@@ -450,7 +449,7 @@ prettyProd sig ku@(kr@(KindRef kn), _) prod@(ts, vars) = do
   tvs    <- prodRuleTypeVars sig ku prod
   mvs    <- prodRuleMetaVars sig ku prod
   tr@(TypeRef tn) <- namer sig ku
-  let tr' = TypeRef $ "$" ++ capitalise tn
+  let tr' = TypeRef $ "$" ++ tn
   cfgVarMaps tvs mvs
   name   <- pprTypeVar tr (TyKind kr)
   terms  <- mapM (prettySymbol sig) ts
@@ -483,7 +482,7 @@ defPrettyRuleSym sig (TypeRef tn, ts) = do
               tr <- namer sig ku
               pprTypeVar tr (TyKind kr)
             prettyPremise (kr@(KindRef kn):tms, ka) = do
-              let tr = TypeRef $ "$" ++ capitalise kn
+              let tr = TypeRef $ "$" ++ kn
               more <- prettyPremise (tms, ka)
               s    <- bindingVar tr $ pprTypeVar tr (TyKind kr)
               return (s ++ "." ++ more)
@@ -541,7 +540,7 @@ prodRuleMetaVars sig _ (syms, _) = do
             liftM mconcat (mapM (mapM f . fst) ps)
           f kr' = do
             TypeRef tn <- namer sig (kr', c)
-            return $ S.singleton ( TypeRef $ "$" ++ capitalise tn
+            return $ S.singleton ( TypeRef $ "$" ++ tn
                                  , TyKind kr')
                 where c = initContext kr' $
                           fromJust $ M.lookup kr' sig

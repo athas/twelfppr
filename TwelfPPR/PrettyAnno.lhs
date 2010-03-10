@@ -48,7 +48,6 @@ import Text.Parsec.String
 import TwelfPPR.LF
 import TwelfPPR.Parser
 import TwelfPPR.Pretty
-import TwelfPPR.Util
 \end{code}
 
 The information we need is very basic: a kind or type name, and the
@@ -187,7 +186,7 @@ prettifyRuleSym dm sig (tr, rs) =
               p <- pprTypeVar (TypeRef kn) (TyKind kr)
               return [p]
             prettyPremise (kr@(KindRef kn):tms, ka) = do
-              let tr' = TypeRef $ "$" ++ capitalise kn
+              let tr' = TypeRef $ "$" ++ kn
               s    <- bindingVar tr' $ pprTypeVar tr' (TyKind kr)
               more <- prettyPremise (tms, ka)
               return (s : more)
