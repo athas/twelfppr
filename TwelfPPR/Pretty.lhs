@@ -320,18 +320,21 @@ type PremisePrinter m = (KindRef -> [Type])
 
 premiseWithContext :: MonadPrint m => PremisePrinter m
 premiseWithContext kenv ((vs, ps), kr, os) =
-  pprJudgement kenv (vs, ps) (kr, os)
+  bindingVars (map fst $ S.toList vs) $
+    pprJudgement kenv (vs, ps) (kr, os)
 
 premiseWithHypoJudgs :: MonadPrint m => PremisePrinter m
-premiseWithHypoJudgs kenv ((_, []), kr, os) = 
-  pprJudgement kenv (S.empty, []) (kr, os)
-premiseWithHypoJudgs kenv ((_, ps), kr, os) = do
-  con <- pprJudgement kenv (S.empty, []) (kr, os)
-  ps'  <- liftM concat $ mapM proc ps
-  return $ "{{" ++ ps' ++ "}\\atop" ++ "{\n" ++ con ++ "\n}}"
-      where proc p = do p' <- pprJudgement kenv (S.empty, []) p
-                        return ("{\\overline{\\displaystyle{" ++ p' ++
-                                   "}}\\atop{\\vdots}}")
+premiseWithHypoJudgs kenv ((vs, []), kr, os) = 
+  bindingVars (map fst $ S.toList vs) $
+    pprJudgement kenv (vs, []) (kr, os)
+premiseWithHypoJudgs kenv ((vs, ps), kr, os) =
+  bindingVars (map fst $ S.toList vs) $ do
+    con <- pprJudgement kenv (vs, []) (kr, os)
+    ps'  <- liftM concat $ mapM proc ps
+    return $ "{{" ++ ps' ++ "}\\atop" ++ "{\n" ++ con ++ "\n}}"
+        where proc p = do p' <- pprJudgement kenv (vs, []) p
+                          return ("{\\overline{\\displaystyle{" ++ p' ++
+                                  "}}\\atop{\\vdots}}")
 \end{code}
 
 \begin{code}
@@ -424,6 +427,11 @@ class Monad m => MonadPrint m where
 bindingVar :: MonadPrint m => TypeRef -> m a -> m a
 bindingVar tr = withPrintConf (\e ->
   e { bound_vars = S.insert tr $ bound_vars e } )
+
+bindingVars :: MonadPrint m => [TypeRef] -> m a -> m a
+bindingVars [] m = m
+bindingVars (tr:trs) m = bindingVar tr $
+  bindingVars trs $ m
 \end{code}
 
 \section{Rendering production rules}

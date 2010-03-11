@@ -56,7 +56,7 @@ original criteria for inclusion.
 data InfRules = InfRules KindRef Kind [(TypeRef, InfRule)]
 data InfRule = InfRule [Judgement] Conclusion
 type Judgement = (JudgementEnv, KindRef, [Object])
-type JudgementEnv = (S.Set TypeRef, [(KindRef, [Object])])
+type JudgementEnv = (S.Set (TypeRef, Type), [(KindRef, [Object])])
 type Conclusion = (KindRef, [Object])
 \end{code}
 
@@ -98,8 +98,8 @@ pprAsConclusion t = ppr t []
 pprAsJudgement :: Type -> Judgement
 pprAsJudgement t = ppr t S.empty []
     where ppr (TyCon Nothing t1 t2) es ps = ppr t2 es (ppr' t1 []:ps)
-          ppr (TyCon (Just tr) _ t2) es ps =
-            ppr t2' (tr' `S.insert` es) ps
+          ppr (TyCon (Just tr) ty t2) es ps =
+            ppr t2' ((tr', ty) `S.insert` es) ps
                 where (tr', t2') = fixShadowing ps (tr, t2)
           ppr t1 es ps = ((es, reverse ps), kr, os)
               where (kr, os) = ppr' t1 []
@@ -138,14 +138,14 @@ infRuleTypeVars (InfRule js (_, os)) =
   foldl S.union (ovars os) $ map jvars js
     where ovars = mconcat . map objFreeVars
           jvars (je, _, os') = jevars je `S.union` ovars os'
-          jevars (_, aps) =
-            mconcat $ map (ovars . snd) aps
+          jevars (vars, aps) =
+            (mconcat $ map (ovars . snd) aps) `S.difference` vars
 
 infRuleMetaVars :: InfRule -> S.Set (TypeRef, Type)
 infRuleMetaVars (InfRule js (_, os)) =
   foldl S.union (ovars os) $ map jvars js
     where ovars = mconcat . map objBoundVars
           jvars (je, _, os') = jevars je `S.union` ovars os'
-          jevars (_, aps) =
-            mconcat $ map (ovars . snd) aps
+          jevars (vars, aps) =
+            (mconcat $ map (ovars . snd) aps) `S.union` vars
 \end{code}
