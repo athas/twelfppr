@@ -98,9 +98,12 @@ pprAsConclusion t = ppr t []
 \begin{code}
 pprAsJudgement :: Type -> Judgement
 pprAsJudgement t = ppr t S.empty []
-    where ppr (TyCon Nothing t1 t2) es ps = ppr t2 es (ppr' t1 []:ps)
-          ppr (TyCon (Just tr) ty t2) es ps =
-            ppr t2' ((tr', ty) `S.insert` es) ps
+    where ppr (TyCon Nothing ty t1) es ps = ppr t1 es (ppr' ty []:ps)
+          ppr (TyCon (Just tr) ty t2) es ps 
+              | not $ freeInType tr t2 =
+                  ppr t2 es (ppr' ty []:ps)
+              | otherwise =
+                  ppr t2' ((tr', ty) `S.insert` es) ps
                 where (tr', t2') = fixShadowing ps (tr, t2)
           ppr t1 es ps = ((es, reverse ps), kr, os)
               where (kr, os) = ppr' t1 []
