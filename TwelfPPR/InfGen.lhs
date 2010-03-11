@@ -79,10 +79,11 @@ judgeEnv (InfRules _ _ m) = S.fromList $ concatMap (ruleEnv . snd) m
 
 \begin{code}
 pprAsRule :: Type -> InfRule
-pprAsRule (TyCon (Just _) _ t2) = pprAsRule t2
-pprAsRule (TyCon Nothing t1 t2) =
-  InfRule (pprAsJudgement t1 : ps) c
-      where InfRule ps c = pprAsRule t2
+pprAsRule (TyCon mtr t1 t2)
+    | maybe True (not . flip freeInType t2) mtr =
+        InfRule (pprAsJudgement t1 : ps) c
+    | otherwise = pprAsRule t2
+    where InfRule ps c = pprAsRule t2
 pprAsRule t = InfRule [] $ pprAsConclusion t
 \end{code}
 
