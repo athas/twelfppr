@@ -154,18 +154,20 @@ transformations.
 
 \begin{code}
 freeInType :: TypeRef -> Type -> Bool
-freeInType tr (TyCon (Just tr') t1 t2)
-    | tr == tr' = True
-    | otherwise = freeInType tr t1 || freeInType tr t2
+freeInType tr (TyCon (Just tr') t1 t2) =
+    (tr /= tr' && freeInType tr t2)
+    || freeInType tr t1
+freeInType tr (TyCon Nothing t1 t2) =
+    (freeInType tr t2) || freeInType tr t1
 freeInType tr (TyApp t o) = freeInType tr t || freeInObj tr o
 freeInType _ _ = False
 
 freeInObj :: TypeRef -> Object -> Bool
 freeInObj tr (Const tr') = tr == tr'
-freeInObj tr (Var tr' t) = tr == tr' && freeInType tr t
+freeInObj tr (Var tr' _) = tr == tr'
 freeInObj tr (Lambda tr' t o) =
-     (tr == tr' && freeInObj tr o) 
-  || freeInType tr t
+     (tr /= tr' && freeInObj tr o)
+     || freeInType tr t
 freeInObj tr (App o1 o2) = freeInObj tr o1 || freeInObj tr o2
 \end{code}
 
