@@ -174,7 +174,7 @@ an explicit context, rather than using hypothetical judgements.
 
 \begin{code}
 optUseContexts :: OptDescr (PPRConfig -> IO PPRConfig)
-optUseContexts = Option ['e'] ["use-contexts"] (NoArg set)
+optUseContexts = Option ['c'] ["use-contexts"] (NoArg set)
                     "Use contexts for judgements."
     where set conf = return $ conf { use_contexts = False }
 \end{code}
