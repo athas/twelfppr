@@ -26,7 +26,7 @@ module TwelfPPR.GrammarGen ( GGenEnv(..)
                            , emptyGGenEnv
                            , MonadGGen(..)
                            , FreeVarContext
-                           , KindUsage
+                           , TyFamUsage
                            , ProdRule
                            , RuleSymbol
                            , Contexter
@@ -93,17 +93,17 @@ variables in subterms.
 
 \begin{code}
 type ProdRule = ([(TypeRef, RuleSymbol)], Bool)
-type RuleSymbol = [([KindRef], KindUsage)]
-type KindUsage = (KindRef, FreeVarContext)
-type FreeVarContext = S.Set KindRef
+type RuleSymbol = [([TyFamRef], TyFamUsage)]
+type TyFamUsage = (TyFamRef, FreeVarContext)
+type FreeVarContext = S.Set TyFamRef
 
-type Contexter =  KindRef
+type Contexter =  TyFamRef
                -> FreeVarContext
                -> FreeVarContext
 
 defaultContexter :: Signature -> Contexter
 defaultContexter sig kr c =
-  c `S.intersection` referencedKinds sig kr
+  c `S.intersection` referencedTyFams sig kr
 simpleContexter :: Signature -> Contexter
 simpleContexter sig kr _ =
   initContext kr (fromJust $ M.lookup kr sig)
@@ -111,7 +111,7 @@ simpleContexter sig kr _ =
 
 \begin{code}
 data GGenEnv = GGenEnv 
-    { prod_rules   :: M.Map KindUsage ProdRule
+    { prod_rules   :: M.Map TyFamUsage ProdRule
     }
 
 emptyGGenEnv :: GGenEnv
@@ -135,10 +135,10 @@ A type is printable as a production rule if its conclusion and
 premises are constant.
 
 \begin{code}
-prodRulePossible :: KindDef -> Bool
+prodRulePossible :: TyFamDef -> Bool
 prodRulePossible kd = all check $ defElems kd
     where check (TyCon _ _ t)       = check t
-          check (TyKind _)          = True
+          check (TyTyFam _)          = True
           check _                   = False
 \end{code}
 
@@ -151,7 +151,7 @@ generated.
 \begin{code}
 pprAsProd :: MonadGGen m => Signature
           -> Contexter
-          -> (KindRef, KindDef)
+          -> (TyFamRef, TyFamDef)
           -> m ()
 pprAsProd sig con x@(kr, fd) = do
   let prod = pprWithContext con c x
@@ -182,10 +182,10 @@ ensureProds sig con (syms, _) =
 
 pprWithContext :: Contexter
                -> FreeVarContext
-               -> (KindRef, KindDef)
+               -> (TyFamRef, TyFamDef)
                -> ProdRule
-pprWithContext con c (kr, KindDef k ms) = 
-  (syms, kr `S.member` c && (hasVar kr $ KindDef k ms))
+pprWithContext con c (kr, TyFamDef k ms) = 
+  (syms, kr `S.member` c && (hasVar kr $ TyFamDef k ms))
     where syms = map (second $ typeSymbol con c) ms
 \end{code}
 
@@ -197,17 +197,17 @@ typeSymbol :: Contexter
            -> FreeVarContext
            -> Type
            -> RuleSymbol
-typeSymbol _ _ (TyKind _) = []
+typeSymbol _ _ (TyTyFam _) = []
 typeSymbol con c t = map (handlePremise con c) $ premises t
 
 handlePremise :: Contexter
               -> FreeVarContext
               -> Type 
-              -> ([KindRef], KindUsage)
-handlePremise con c (TyCon _ (TyKind kr) t2) = (kr : krs, ku)
+              -> ([TyFamRef], TyFamUsage)
+handlePremise con c (TyCon _ (TyTyFam kr) t2) = (kr : krs, ku)
     where (krs, ku) = handlePremise con (S.insert kr c) t2
 handlePremise _ _ (TyCon _ _ _)  = error "Cannot handle greater than 2nd order HOAS"
-handlePremise con c (TyKind kr)    = ([], (kr, con kr c))
+handlePremise con c (TyTyFam kr)    = ([], (kr, con kr c))
 handlePremise _ _ (TyApp _ _)    =
   error "Cannot handle premises with arity > 0"
 \end{code}
@@ -222,12 +222,12 @@ For each parametric premise we create a symbol for variables of the
 type families used as parameters in the premise.
 
 \begin{code}
-hasVar :: KindRef -> KindDef -> Bool
+hasVar :: TyFamRef -> TyFamDef -> Bool
 hasVar kr kd = any (typeHasVar) $ defElems kd
     where typeHasVar    = any premiseHasVar . premises 
-          premiseHasVar = isJust . find (==TyKind kr) . premises
+          premiseHasVar = isJust . find (==TyTyFam kr) . premises
 
-initContext :: KindRef -> KindDef -> FreeVarContext
+initContext :: TyFamRef -> TyFamDef -> FreeVarContext
 initContext kr fd
     | hasVar kr fd = S.singleton kr
     | otherwise = S.empty

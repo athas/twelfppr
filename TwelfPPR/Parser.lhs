@@ -472,9 +472,9 @@ toSignature :: [Decl] -> LF.Signature
 toSignature ds = M.fromList $ catMaybes $ map convert ds
     where convert (DTerm s t)
               | isFamDef t =
-                  Just ( LF.KindRef s
+                  Just ( LF.TyFamRef s
                        , buildFamily kr k ds)
-              where kr = LF.KindRef s
+              where kr = LF.TyFamRef s
                     k  = toKind M.empty t
           convert _ = Nothing
 \end{code}
@@ -498,9 +498,9 @@ type family that we are interested in.  A term definition is eligible
 if its conclusion (see above) is in the type family.
 
 \begin{code}
-buildFamily :: LF.KindRef -> LF.Kind -> [Decl] -> LF.KindDef
-buildFamily (LF.KindRef s) k =
-  LF.KindDef k . map convert . catMaybes . map pick
+buildFamily :: LF.TyFamRef -> LF.Kind -> [Decl] -> LF.TyFamDef
+buildFamily (LF.TyFamRef s) k =
+  LF.TyFamDef k . map convert . catMaybes . map pick
     where pick (DTerm tr t) 
               | ok (conclusion t) = Just (LF.TypeRef tr, t)
           pick _ = Nothing
@@ -547,8 +547,8 @@ applied to zero arguments.
 \begin{code}
 toType vs (TApp t1 t2) =
   LF.TyApp (toType vs t1) (toObject vs t2)
-toType _ (TConstant name) = LF.TyKind (LF.KindRef name)
-toType _ (TVar name)      = LF.TyKind (LF.KindRef name)
+toType _ (TConstant name) = LF.TyTyFam (LF.TyFamRef name)
+toType _ (TVar name)      = LF.TyTyFam (LF.TyFamRef name)
 \end{code}
 
 Type ascriptions are completely ignored: they have no semantic value.

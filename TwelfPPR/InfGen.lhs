@@ -47,31 +47,31 @@ maps names of types in the family to inference rules.  An inference
 rule consists of a potentially empty set of premises (actually a list,
 as we wish to preserve the order in which the programmer originally
 specified the premises in the Twelf code) and a conclusion, both of
-which are simply the name of some kind applied to a potentially empty
-sequence of objects.  The kind in the conclusion will always be the
-same kind as the judgement definition describes, as that would be the
-original criteria for inclusion.
+which are simply the name of some type family applied to a potentially
+empty sequence of objects.  The type family in the conclusion will
+always be the same type family as the judgement definition describes,
+as that would be the original criteria for inclusion.
 
 \begin{code}
-data InfRules = InfRules KindRef Kind [(TypeRef, InfRule)]
+data InfRules = InfRules TyFamRef Kind [(TypeRef, InfRule)]
 data InfRule = InfRule [Judgement] Conclusion
-type Judgement = (JudgementEnv, KindRef, [Object])
-type JudgementEnv = (S.Set (TypeRef, Type), [(KindRef, [Object])])
-type Conclusion = (KindRef, [Object])
+type Judgement = (JudgementEnv, TyFamRef, [Object])
+type JudgementEnv = (S.Set (TypeRef, Type), [(TyFamRef, [Object])])
+type Conclusion = (TyFamRef, [Object])
 \end{code}
 
-Given the name of a kind and its definition, we can produce the above
-abstract representation of a judgement by mapping each type in
-the kind to its corresponding inference rule.
+Given the name of a type family and its definition, we can produce the
+above abstract representation of a judgement by mapping each type in
+the type family to its corresponding inference rule.
 
 \begin{code}
-pprAsInfRules :: (KindRef, KindDef) -> InfRules
-pprAsInfRules (kr, KindDef k ms) = 
+pprAsInfRules :: (TyFamRef, TyFamDef) -> InfRules
+pprAsInfRules (kr, TyFamDef k ms) = 
   InfRules kr k $ map (second pprAsRule) ms
 \end{code}
 
 \begin{code}
-judgeEnv :: InfRules -> S.Set KindRef
+judgeEnv :: InfRules -> S.Set TyFamRef
 judgeEnv (InfRules _ _ m) = S.fromList $ concatMap (ruleEnv . snd) m
     where ruleEnv (InfRule ps _) = concatMap judgEnv ps
           judgEnv ((_, ce), _, _) = map fst ce
@@ -90,7 +90,7 @@ pprAsRule t = InfRule [] $ pprAsConclusion t
 \begin{code}
 pprAsConclusion :: Type -> Conclusion
 pprAsConclusion t = ppr t []
-    where ppr (TyKind kr) os = (kr, os)
+    where ppr (TyTyFam kr) os = (kr, os)
           ppr (TyApp t' o) os = ppr t' (o:os)
           ppr _ _ = error "Type constructor found unexpectedly in term"
 \end{code}
@@ -107,7 +107,7 @@ pprAsJudgement t = ppr t S.empty []
                 where (tr', t2') = fixShadowing ps (tr, t2)
           ppr t1 es ps = ((es, reverse ps), kr, os)
               where (kr, os) = ppr' t1 []
-          ppr' (TyKind kr) os = (kr, os)
+          ppr' (TyTyFam kr) os = (kr, os)
           ppr' (TyApp t1 o) os = ppr' t1 (o:os)
           ppr' _ _ = error "Type constructor found unexpectedly in term"
 \end{code}
@@ -120,7 +120,7 @@ to the name --- this process is guaranteed to terminate, as there is a
 finite amount of premises.
 
 \begin{code}
-fixShadowing :: [(KindRef, [Object])] 
+fixShadowing :: [(TyFamRef, [Object])] 
              -> (TypeRef, Type)
              -> (TypeRef, Type)
 fixShadowing ps (tr, t)

@@ -19,21 +19,21 @@ This chapter implements the data types and ancillary functions for
 representing LF in Haskell.
 
 \begin{code}
-module TwelfPPR.LF ( KindRef(..)
+module TwelfPPR.LF ( TyFamRef(..)
                    , TypeRef(..)
                    , Type(..)
                    , conclusion
                    , premises
                    , Object(..)
                    , Kind(..)
-                   , KindDef(..)
+                   , TyFamDef(..)
                    , defElems
                    , Signature
                    , freeInType
                    , freeInObj
                    , renameType
                    , renameObj
-                   , referencedKinds
+                   , referencedTyFams
                    , objFreeVars
                    , objBoundVars )
     where
@@ -46,7 +46,7 @@ import qualified Data.Set as S
 The full LF type theory is defined by the following grammar.
 \\
 \begin{tabular}{lrcl}
-Kinds & $K$ & ::= & $\text{type} \mid \Pi x:A.K$ \\
+TyFams & $K$ & ::= & $\text{type} \mid \Pi x:A.K$ \\
 Families & $A$ & ::= & $a \mid A\ M \mid \Pi x:A_1.A_2$ \\
 Objects & $M$ & ::= & $c \mid x \mid \lambda x:A. M \mid M_1\ M_2$ \\
 Signatures & $\Sigma$ & ::= & $\cdot \mid \Sigma, a:K \mid \Sigma,
@@ -56,20 +56,20 @@ Contexts & $\Gamma$ & ::= & $\cdot \mid \Gamma, x:A$
 \\
 
 We ignore contexts, they do not matter for our purposes.  A $c$ is the
-name of a type constant, and an $x$ is the name of a type variable.
-An $a$ is the name of a kind.  This leads us to the following
-definition of types.  We define disjunct types for naming kinds and
-types for increased type safety.
+name of a constant, and an $x$ is the name of a type variable.  An $a$
+is the name of a type family.  This leads us to the following
+definition of types.  We define disjunct types for naming families and
+constants for increased type safety.
 
 \begin{code}
-newtype KindRef = KindRef String
+newtype TyFamRef = TyFamRef String
     deriving (Show, Eq, Ord)
 newtype TypeRef = TypeRef String
     deriving (Show, Eq, Ord)
 
 data Type = TyCon (Maybe TypeRef) Type Type
           | TyApp Type Object
-          | TyKind KindRef
+          | TyTyFam TyFamRef
             deriving (Show, Eq, Ord)
 \end{code}
 
@@ -119,7 +119,7 @@ instance Eq Object where
     _ == _ = False
 \end{code}
 
-Kinds are simple, consisting either of a $\Pi$ constructor or the
+Kind are simple, consisting either of a $\Pi$ constructor or the
 \texttt{type} atom.
 
 \begin{code}
@@ -128,21 +128,22 @@ data Kind = KiType
             deriving (Show, Eq)
 \end{code}
 
-A kind definition maps type names to the actual types (or
+A type family definition maps type names to the actual types (or
 specifically, type families) themselves.
 
 \begin{code}
-data KindDef = KindDef Kind [(TypeRef, Type)]
+data TyFamDef = TyFamDef Kind [(TypeRef, Type)]
                    deriving (Show, Eq)
 
-defElems :: KindDef -> [Type]
-defElems (KindDef _ l) = map snd l
+defElems :: TyFamDef -> [Type]
+defElems (TyFamDef _ l) = map snd l
 \end{code}
 
-A Twelf signature is a map of names of kind names to kind definitions.
+A signature is a map of names of type family names to type
+family definitions.
 
 \begin{code}
-type Signature = M.Map KindRef KindDef
+type Signature = M.Map TyFamRef TyFamDef
 \end{code}
 
 \section{Operations on LF terms}
@@ -203,17 +204,17 @@ To determine which kinds are applied in some type $t$ we
 can trivially walk through the tree.
 
 \begin{code}
-refsInType :: Type -> S.Set KindRef
+refsInType :: Type -> S.Set TyFamRef
 refsInType (TyCon _ t1 t2) = refsInType t1 `S.union` refsInType t2
 refsInType (TyApp t _)     = refsInType t
-refsInType (TyKind k)      = S.singleton k
+refsInType (TyTyFam k)      = S.singleton k
 \end{code}
 
 The kind applications of some type family definition is the union of
 all kind applications in the member types.
 
 \begin{code}
-refsInTyFam :: KindDef -> S.Set KindRef
+refsInTyFam :: TyFamDef -> S.Set TyFamRef
 refsInTyFam kd = 
   foldl S.union S.empty $ map refsInType $ defElems kd
 \end{code}
@@ -223,12 +224,12 @@ be adequate for our purposes.  Thus, we also need to recursively
 inspect the referenced kinds.
 
 \begin{code}
-referencedKinds :: Signature -> KindRef -> S.Set KindRef
-referencedKinds sig = referencedKinds' S.empty
-    where referencedKinds' visited fr
+referencedTyFams :: Signature -> TyFamRef -> S.Set TyFamRef
+referencedTyFams sig = referencedTyFams' S.empty
+    where referencedTyFams' visited fr
               | fr `S.member` visited = S.empty
               | otherwise = foldl S.union (S.singleton fr) refs'
-              where refs' = map (referencedKinds' visited') refs
+              where refs' = map (referencedTyFams' visited') refs
                     refs  = S.toList $ refsInTyFam $ fromJust $ M.lookup fr sig
                     visited' = S.insert fr visited
 \end{code}

@@ -55,10 +55,10 @@ The information we need is very basic: a kind or type name, and the
 operator is encountered.
 
 \begin{code}
-data PrettyAnno = ConstAppAnno KindRef String
+data PrettyAnno = ConstAppAnno TyFamRef String
                 | ConstAnno TypeRef String
-                | TypeVarAnno KindRef String
-                | BoundVarAnno KindRef String
+                | TypeVarAnno TyFamRef String
+                | BoundVarAnno TyFamRef String
 \end{code}
 
 Given a list of |PrettyAnno|s (which describes both kinds and types),
@@ -72,7 +72,7 @@ slightly more complicated, and will be described further below.
 
 \begin{code}
 prettifiers :: MonadPrint m => [PrettyAnno] 
-            -> (Prettifier KindRef m,
+            -> (Prettifier TyFamRef m,
                 Prettifier TypeRef m,
                 TypeVarPrinter m,
                 TypeVarPrinter m,
@@ -90,9 +90,9 @@ prettifiers descs = ( f defPrettyTypeApp $ pick kindapp
           kindapp _                  = Nothing
           tyapp (ConstAnno tr s)    = Just (tr, s)
           tyapp _                    = Nothing
-          tyvar (TypeVarAnno kr s)   = Just (TyKind kr, s)
+          tyvar (TypeVarAnno kr s)   = Just (TyTyFam kr, s)
           tyvar _                    = Nothing
-          boundvar (BoundVarAnno kr s) = Just (TyKind kr, s)
+          boundvar (BoundVarAnno kr s) = Just (TyTyFam kr, s)
           boundvar _                  = Nothing
           f def dm r os = case M.lookup r dm of
                             Just s -> liftM (s++) (macroargs os)
@@ -105,13 +105,13 @@ prettifyVar :: MonadPrint m =>
             -> M.Map Type String 
             -> TypeVarPrinter m
 prettifyVar def dm tr ty =
-  case M.lookup (TyKind $ end ty) dm of
+  case M.lookup (TyTyFam $ end ty) dm of
     Nothing -> def tr ty
     Just  s -> return (s ++ sub idx ++ replicate ps '\'')
    where (_, idx, ps) = splitVar tr
          sub Nothing  = ""
          sub (Just i) = "_{" ++ show i ++ "}"
-         end (TyKind kr)    = kr
+         end (TyTyFam kr)    = kr
          end (TyCon _ _ ty') = end ty'
          end (TyApp ty' _)   = end ty'
 
@@ -182,12 +182,12 @@ prettifyRuleSym dm sig (tr, rs) =
       Just s  -> liftM (s++) (liftM (concatMap wrap . concat) $
                               mapM prettyPremise rs)
       where wrap x = "{" ++ x ++ "}"
-            prettyPremise ([], (kr@(KindRef kn), _)) = do
-              p <- pprTypeVar (TypeRef kn) (TyKind kr)
+            prettyPremise ([], (kr@(TyFamRef kn), _)) = do
+              p <- pprTypeVar (TypeRef kn) (TyTyFam kr)
               return [p]
-            prettyPremise (kr@(KindRef kn):tms, ka) = do
+            prettyPremise (kr@(TyFamRef kn):tms, ka) = do
               let tr' = TypeRef $ "$" ++ kn
-              s    <- bindingVar tr' $ pprTypeVar tr' (TyKind kr)
+              s    <- bindingVar tr' $ pprTypeVar tr' (TyTyFam kr)
               more <- prettyPremise (tms, ka)
               return (s : more)
 \end{code}
@@ -202,10 +202,10 @@ are separated by whitespace (in a file, for example by line breaks).
 
 \begin{code}
 prettyAnno :: GenParser Char () PrettyAnno
-prettyAnno = (    string "type"  *> f ConstAppAnno KindRef
+prettyAnno = (    string "type"  *> f ConstAppAnno TyFamRef
               <|> string "const" *> f ConstAnno TypeRef
-              <|> string "var"   *> f TypeVarAnno KindRef
-              <|> string "boundvar" *> f BoundVarAnno KindRef) <* spaces
+              <|> string "var"   *> f TypeVarAnno TyFamRef
+              <|> string "boundvar" *> f BoundVarAnno TyFamRef) <* spaces
     where f c sc = spaces *>
                    pure c <*> (pure sc <*> many1 idChar)
                           <*> (spaces *> many1 (satisfy $ not . isSpace))
