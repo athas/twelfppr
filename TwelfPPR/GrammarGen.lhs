@@ -27,8 +27,8 @@ module TwelfPPR.GrammarGen ( GGenEnv(..)
                            , MonadGGen(..)
                            , FreeVarContext
                            , TyFamUsage
-                           , ProdRule
-                           , RuleSymbol
+                           , GrammarRule
+                           , Production
                            , Contexter
                            , defaultContexter
                            , simpleContexter
@@ -92,8 +92,8 @@ in the type definitions, but also which kinds can appear as free
 variables in subterms.
 
 \begin{code}
-type ProdRule = ([(ConstRef, RuleSymbol)], Bool)
-type RuleSymbol = [([TyFamRef], TyFamUsage)]
+type GrammarRule = ([(ConstRef, Production)], Bool)
+type Production = [([TyFamRef], TyFamUsage)]
 type TyFamUsage = (TyFamRef, FreeVarContext)
 type FreeVarContext = S.Set TyFamRef
 
@@ -111,7 +111,7 @@ simpleContexter sig kr _ =
 
 \begin{code}
 data GGenEnv = GGenEnv 
-    { prod_rules   :: M.Map TyFamUsage ProdRule
+    { prod_rules   :: M.Map TyFamUsage GrammarRule
     }
 
 emptyGGenEnv :: GGenEnv
@@ -164,7 +164,7 @@ pprAsProd sig con x@(kr, fd) = do
 \begin{code}
 ensureProds :: MonadGGen m => Signature
             -> Contexter
-            -> ProdRule
+            -> GrammarRule
             -> m ()
 ensureProds sig con (syms, _) =
   forM_ (krs syms) $ \(kr, c) -> do
@@ -183,7 +183,7 @@ ensureProds sig con (syms, _) =
 pprWithContext :: Contexter
                -> FreeVarContext
                -> (TyFamRef, TyFamDef)
-               -> ProdRule
+               -> GrammarRule
 pprWithContext con c (kr, TyFamDef k ms) = 
   (syms, kr `S.member` c && (hasVar kr $ TyFamDef k ms))
     where syms = map (second $ typeSymbol con c) ms
@@ -196,7 +196,7 @@ it is printed as its name applied to a tuple containing its premises.
 typeSymbol :: Contexter
            -> FreeVarContext
            -> Type
-           -> RuleSymbol
+           -> Production
 typeSymbol _ _ (TyName _) = []
 typeSymbol con c t = map (handlePremise con c) $ premises t
 

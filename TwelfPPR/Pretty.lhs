@@ -139,7 +139,7 @@ cfgVarMaps ts ms = do
 
 \begin{code}
 type SymPrettifier m =
-    Signature -> (ConstRef, RuleSymbol) -> m String
+    Signature -> (ConstRef, Production) -> m String
 type Prettifier o m = o -> [Object] -> m String
 \end{code}
 
@@ -439,7 +439,7 @@ bindingVars (tr:trs) m = bindingVar tr $
 \begin{code}
 prettyAllProds :: MonadPrint m => Signature
                -> String
-               -> [(TyFamUsage, ProdRule)]
+               -> [(TyFamUsage, GrammarRule)]
                -> m String
 prettyAllProds sig prefix prs = do
   branches <- mapM (uncurry $ prettyProd sig) prs
@@ -451,7 +451,7 @@ prettyAllProds sig prefix prs = do
 \begin{code}
 prettyProd :: MonadPrint m => Signature
            -> TyFamUsage
-           -> ProdRule
+           -> GrammarRule
            -> m String
 prettyProd sig ku@(kr@(TyFamRef kn), _) prod@(ts, vars) = do
   tvs    <- prodRuleTypeVars sig ku prod
@@ -474,7 +474,7 @@ prettyProd sig ku@(kr@(TyFamRef kn), _) prod@(ts, vars) = do
 
 \begin{code}
 prettySymbol :: MonadPrint m => Signature 
-             -> (ConstRef, RuleSymbol)
+             -> (ConstRef, Production)
              -> m String
 prettySymbol sig (tr, ts) = do
   prs <- asksPrintConf prettyRuleSym
@@ -527,7 +527,7 @@ namer sig (kr@(TyFamRef kn), vs) = do
 \begin{code}
 prodRuleTypeVars :: MonadPrint m => Signature
                  -> TyFamUsage
-                 -> ProdRule 
+                 -> GrammarRule 
                  -> m (S.Set (VarRef, Type))
 prodRuleTypeVars sig ku@(kr, _) (syms, _) = do
   s <- liftM (S.fromList . concat) (mapM symvars syms)
@@ -540,7 +540,7 @@ prodRuleTypeVars sig ku@(kr, _) (syms, _) = do
 
 prodRuleBoundVars :: MonadPrint m => Signature
                  -> TyFamUsage
-                 -> ProdRule
+                 -> GrammarRule
                  -> m (S.Set (VarRef, Type))
 prodRuleBoundVars sig _ (syms, _) = do
   liftM (mconcat . concat) (mapM symvars syms)
