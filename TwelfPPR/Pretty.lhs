@@ -459,11 +459,11 @@ prettyProd sig ku@(kr@(TyFamRef kn), _) prod@(ts, vars) = do
   tr@(TypeRef tn) <- namer sig ku
   let tr' = TypeRef $ "$" ++ tn
   cfgVarMaps tvs mvs
-  name   <- pprTypeVar tr (TyTyFam kr)
+  name   <- pprTypeVar tr (TyName kr)
   terms  <- mapM (prettySymbol sig) ts
   terms' <- if vars
             then liftM (:terms) (bindingVar tr' $
-                                   pprTypeVar tr' (TyTyFam kr))
+                                   pprTypeVar tr' (TyName kr))
             else return terms
   return (ifthenbranch (argescape kn) $
             "\\begin{tabular}{rl}\n$" ++
@@ -488,11 +488,11 @@ defPrettyRuleSym sig (TypeRef tn, ts) = do
   return $ prettyName tn ++ "(" ++ args ++ ")"
       where prettyPremise ([], ku@(kr, _)) = do
               tr <- namer sig ku
-              pprTypeVar tr (TyTyFam kr)
+              pprTypeVar tr (TyName kr)
             prettyPremise (kr@(TyFamRef kn):tms, ka) = do
               let tr = TypeRef $ "$" ++ kn
               more <- prettyPremise (tms, ka)
-              s    <- bindingVar tr $ pprTypeVar tr (TyTyFam kr)
+              s    <- bindingVar tr $ pprTypeVar tr (TyName kr)
               return (s ++ "." ++ more)
 \end{code}
 
@@ -532,11 +532,11 @@ prodRuleTypeVars :: MonadPrint m => Signature
 prodRuleTypeVars sig ku@(kr, _) (syms, _) = do
   s <- liftM (S.fromList . concat) (mapM symvars syms)
   tr <- namer sig ku
-  return $ S.insert (tr, TyTyFam kr) s
+  return $ S.insert (tr, TyName kr) s
     where symvars (_, ps) =
             forM ps $ \(_, ku'@(kr', _)) -> do
               tr <- namer sig ku'
-              return (tr, TyTyFam kr')
+              return (tr, TyName kr')
 
 prodRuleBoundVars :: MonadPrint m => Signature
                  -> TyFamUsage
@@ -549,7 +549,7 @@ prodRuleBoundVars sig _ (syms, _) = do
           f kr' = do
             TypeRef tn <- namer sig (kr', c)
             return $ S.singleton ( TypeRef $ "$" ++ tn
-                                 , TyTyFam kr')
+                                 , TyName kr')
                 where c = initContext kr' $
                           fromJust $ M.lookup kr' sig
 \end{code}

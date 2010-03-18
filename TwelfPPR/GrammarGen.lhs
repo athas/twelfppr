@@ -138,7 +138,7 @@ premises are constant.
 prodRulePossible :: TyFamDef -> Bool
 prodRulePossible kd = all check $ defElems kd
     where check (TyCon _ _ t)       = check t
-          check (TyTyFam _)          = True
+          check (TyName _)          = True
           check _                   = False
 \end{code}
 
@@ -197,17 +197,17 @@ typeSymbol :: Contexter
            -> FreeVarContext
            -> Type
            -> RuleSymbol
-typeSymbol _ _ (TyTyFam _) = []
+typeSymbol _ _ (TyName _) = []
 typeSymbol con c t = map (handlePremise con c) $ premises t
 
 handlePremise :: Contexter
               -> FreeVarContext
               -> Type 
               -> ([TyFamRef], TyFamUsage)
-handlePremise con c (TyCon _ (TyTyFam kr) t2) = (kr : krs, ku)
+handlePremise con c (TyCon _ (TyName kr) t2) = (kr : krs, ku)
     where (krs, ku) = handlePremise con (S.insert kr c) t2
 handlePremise _ _ (TyCon _ _ _)  = error "Cannot handle greater than 2nd order HOAS"
-handlePremise con c (TyTyFam kr)    = ([], (kr, con kr c))
+handlePremise con c (TyName kr)    = ([], (kr, con kr c))
 handlePremise _ _ (TyApp _ _)    =
   error "Cannot handle premises with arity > 0"
 \end{code}
@@ -225,7 +225,7 @@ type families used as parameters in the premise.
 hasVar :: TyFamRef -> TyFamDef -> Bool
 hasVar kr kd = any (typeHasVar) $ defElems kd
     where typeHasVar    = any premiseHasVar . premises 
-          premiseHasVar = isJust . find (==TyTyFam kr) . premises
+          premiseHasVar = isJust . find (==TyName kr) . premises
 
 initContext :: TyFamRef -> TyFamDef -> FreeVarContext
 initContext kr fd

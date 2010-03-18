@@ -67,9 +67,9 @@ newtype TyFamRef = TyFamRef String
 newtype TypeRef = TypeRef String
     deriving (Show, Eq, Ord)
 
-data Type = TyCon (Maybe TypeRef) Type Type
-          | TyApp Type Object
-          | TyTyFam TyFamRef
+data Type = TyCon  (Maybe TypeRef) Type Type
+          | TyApp  Type Object
+          | TyName TyFamRef
             deriving (Show, Eq, Ord)
 \end{code}
 
@@ -207,7 +207,7 @@ can trivially walk through the tree.
 refsInType :: Type -> S.Set TyFamRef
 refsInType (TyCon _ t1 t2) = refsInType t1 `S.union` refsInType t2
 refsInType (TyApp t _)     = refsInType t
-refsInType (TyTyFam k)      = S.singleton k
+refsInType (TyName k)      = S.singleton k
 \end{code}
 
 The kind applications of some type family definition is the union of

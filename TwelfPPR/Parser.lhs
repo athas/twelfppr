@@ -547,8 +547,8 @@ applied to zero arguments.
 \begin{code}
 toType vs (TApp t1 t2) =
   LF.TyApp (toType vs t1) (toObject vs t2)
-toType _ (TConstant name) = LF.TyTyFam (LF.TyFamRef name)
-toType _ (TVar name)      = LF.TyTyFam (LF.TyFamRef name)
+toType _ (TConstant name) = LF.TyName (LF.TyFamRef name)
+toType _ (TVar name)      = LF.TyName (LF.TyFamRef name)
 \end{code}
 
 Type ascriptions are completely ignored: they have no semantic value.

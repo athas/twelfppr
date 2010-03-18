@@ -90,9 +90,9 @@ prettifiers descs = ( f defPrettyTypeApp $ pick kindapp
           kindapp _                  = Nothing
           tyapp (ConstAnno tr s)    = Just (tr, s)
           tyapp _                    = Nothing
-          tyvar (TypeVarAnno kr s)   = Just (TyTyFam kr, s)
+          tyvar (TypeVarAnno kr s)   = Just (TyName kr, s)
           tyvar _                    = Nothing
-          boundvar (BoundVarAnno kr s) = Just (TyTyFam kr, s)
+          boundvar (BoundVarAnno kr s) = Just (TyName kr, s)
           boundvar _                  = Nothing
           f def dm r os = case M.lookup r dm of
                             Just s -> liftM (s++) (macroargs os)
@@ -105,13 +105,13 @@ prettifyVar :: MonadPrint m =>
             -> M.Map Type String 
             -> TypeVarPrinter m
 prettifyVar def dm tr ty =
-  case M.lookup (TyTyFam $ end ty) dm of
+  case M.lookup (TyName $ end ty) dm of
     Nothing -> def tr ty
     Just  s -> return (s ++ sub idx ++ replicate ps '\'')
    where (_, idx, ps) = splitVar tr
          sub Nothing  = ""
          sub (Just i) = "_{" ++ show i ++ "}"
-         end (TyTyFam kr)    = kr
+         end (TyName kr)    = kr
          end (TyCon _ _ ty') = end ty'
          end (TyApp ty' _)   = end ty'
 
@@ -183,11 +183,11 @@ prettifyRuleSym dm sig (tr, rs) =
                               mapM prettyPremise rs)
       where wrap x = "{" ++ x ++ "}"
             prettyPremise ([], (kr@(TyFamRef kn), _)) = do
-              p <- pprTypeVar (TypeRef kn) (TyTyFam kr)
+              p <- pprTypeVar (TypeRef kn) (TyName kr)
               return [p]
             prettyPremise (kr@(TyFamRef kn):tms, ka) = do
               let tr' = TypeRef $ "$" ++ kn
-              s    <- bindingVar tr' $ pprTypeVar tr' (TyTyFam kr)
+              s    <- bindingVar tr' $ pprTypeVar tr' (TyName kr)
               more <- prettyPremise (tms, ka)
               return (s : more)
 \end{code}

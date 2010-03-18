@@ -90,7 +90,7 @@ pprAsRule t = InfRule [] $ pprAsConclusion t
 \begin{code}
 pprAsConclusion :: Type -> Conclusion
 pprAsConclusion t = ppr t []
-    where ppr (TyTyFam kr) os = (kr, os)
+    where ppr (TyName kr) os = (kr, os)
           ppr (TyApp t' o) os = ppr t' (o:os)
           ppr _ _ = error "Type constructor found unexpectedly in term"
 \end{code}
@@ -107,7 +107,7 @@ pprAsJudgement t = ppr t S.empty []
                 where (tr', t2') = fixShadowing ps (tr, t2)
           ppr t1 es ps = ((es, reverse ps), kr, os)
               where (kr, os) = ppr' t1 []
-          ppr' (TyTyFam kr) os = (kr, os)
+          ppr' (TyName kr) os = (kr, os)
           ppr' (TyApp t1 o) os = ppr' t1 (o:os)
           ppr' _ _ = error "Type constructor found unexpectedly in term"
 \end{code}
