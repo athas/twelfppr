@@ -217,7 +217,7 @@ maybeReadAnnotations = do
                      { prettyTypeApp  = pka
                      , prettyConstApp = pta
                      , prettyTypeVar  = ptv
-                     , prettyMetaVar  = pmv
+                     , prettyBoundVar = pmv
                      , prettyRuleSym  = prs } }
 \end{code}
 

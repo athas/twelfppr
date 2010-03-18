@@ -22,8 +22,8 @@ Specifically, we make it possible to describe how to print three cases.
 \item[Constant applications], of the form $c M_1\ldots M_n$, where the
   operator$c$ is a reference to either a type or a kind, and the
   number of operands may be zero.
-\item[Type variables], bound through $\Pi$ abstraction.
-\item[Metavariables], bound through $\lambda$ abstraction.
+\item[Type variables], bound through definition-global $\Pi$ abstraction.
+\item[Bound variables], bound through $\lambda$ or local $\Pi$ abstraction.
 \end{description}
 
 \begin{code}
@@ -58,7 +58,7 @@ operator is encountered.
 data PrettyAnno = ConstAppAnno KindRef String
                 | ConstAnno TypeRef String
                 | TypeVarAnno KindRef String
-                | MetaVarAnno KindRef String
+                | BoundVarAnno KindRef String
 \end{code}
 
 Given a list of |PrettyAnno|s (which describes both kinds and types),
@@ -80,7 +80,7 @@ prettifiers :: MonadPrint m => [PrettyAnno]
 prettifiers descs = ( f defPrettyTypeApp $ pick kindapp
                     , f defPrettyConstApp $ pick tyapp
                     , prettifyTypeVar $ pick tyvar
-                    , prettifyMetaVar $ pick metavar
+                    , prettifyBoundVar $ pick boundvar
                     , prettifyRuleSym $ pick tyapp)
     where pick :: Ord a =>
                   (PrettyAnno -> Maybe (a, String))
@@ -92,8 +92,8 @@ prettifiers descs = ( f defPrettyTypeApp $ pick kindapp
           tyapp _                    = Nothing
           tyvar (TypeVarAnno kr s)   = Just (TyKind kr, s)
           tyvar _                    = Nothing
-          metavar (MetaVarAnno kr s) = Just (TyKind kr, s)
-          metavar _                  = Nothing
+          boundvar (BoundVarAnno kr s) = Just (TyKind kr, s)
+          boundvar _                  = Nothing
           f def dm r os = case M.lookup r dm of
                             Just s -> liftM (s++) (macroargs os)
                             Nothing -> def r os
@@ -120,10 +120,10 @@ prettifyTypeVar :: MonadPrint m =>
                 -> TypeVarPrinter m
 prettifyTypeVar = prettifyVar defPrettyTypeVar
 
-prettifyMetaVar :: MonadPrint m =>
+prettifyBoundVar :: MonadPrint m =>
                    M.Map Type String
                 -> TypeVarPrinter m
-prettifyMetaVar = prettifyVar defPrettyMetaVar
+prettifyBoundVar = prettifyVar defPrettyBoundVar
 \end{code}
 
 \section{Passing operands}
@@ -205,7 +205,7 @@ prettyAnno :: GenParser Char () PrettyAnno
 prettyAnno = (    string "type"  *> f ConstAppAnno KindRef
               <|> string "const" *> f ConstAnno TypeRef
               <|> string "var"   *> f TypeVarAnno KindRef
-              <|> string "metavar" *> f MetaVarAnno KindRef) <* spaces
+              <|> string "boundvar" *> f BoundVarAnno KindRef) <* spaces
     where f c sc = spaces *>
                    pure c <*> (pure sc <*> many1 idChar)
                           <*> (spaces *> many1 (satisfy $ not . isSpace))

@@ -22,7 +22,7 @@ module TwelfPPR.InfGen ( InfRules(..)
                        , pprAsInfRules
                        , judgeEnv
                        , infRuleTypeVars
-                       , infRuleMetaVars ) 
+                       , infRuleBoundVars ) 
     where
 
 import Control.Arrow
@@ -145,8 +145,8 @@ infRuleTypeVars (InfRule js (_, os)) =
           jevars (vars, aps) =
             (mconcat $ map (ovars . snd) aps) `S.difference` vars
 
-infRuleMetaVars :: InfRule -> S.Set (TypeRef, Type)
-infRuleMetaVars (InfRule js (_, os)) =
+infRuleBoundVars :: InfRule -> S.Set (TypeRef, Type)
+infRuleBoundVars (InfRule js (_, os)) =
   foldl S.union (ovars os) $ map jvars js
     where ovars = mconcat . map objBoundVars
           jvars (je, _, os') = jevars je `S.union` ovars os'
