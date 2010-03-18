@@ -20,7 +20,8 @@ representing LF in Haskell.
 
 \begin{code}
 module TwelfPPR.LF ( TyFamRef(..)
-                   , TypeRef(..)
+                   , ConstRef(..)
+                   , VarRef(..)
                    , Type(..)
                    , conclusion
                    , premises
@@ -64,10 +65,12 @@ constants for increased type safety.
 \begin{code}
 newtype TyFamRef = TyFamRef String
     deriving (Show, Eq, Ord)
-newtype TypeRef = TypeRef String
+newtype ConstRef  = ConstRef String
+    deriving (Show, Eq, Ord)
+newtype VarRef   = VarRef String
     deriving (Show, Eq, Ord)
 
-data Type = TyCon  (Maybe TypeRef) Type Type
+data Type = TyCon  (Maybe VarRef) Type Type
           | TyApp  Type Object
           | TyName TyFamRef
             deriving (Show, Eq, Ord)
@@ -98,9 +101,9 @@ annotate all variables with their type, at both binding- and
 usage-points.
 
 \begin{code}
-data Object = Const TypeRef
-            | Var TypeRef Type
-            | Lambda TypeRef Type Object
+data Object = Const ConstRef
+            | Var VarRef Type
+            | Lambda VarRef Type Object
             | App Object Object
               deriving (Show, Ord)
 \end{code}
@@ -124,7 +127,7 @@ Kind are simple, consisting either of a $\Pi$ constructor or the
 
 \begin{code}
 data Kind = KiType
-          | KiCon (Maybe TypeRef) Type Kind
+          | KiCon (Maybe VarRef) Type Kind
             deriving (Show, Eq)
 \end{code}
 
@@ -132,7 +135,7 @@ A type family definition maps type names to the actual types (or
 specifically, type families) themselves.
 
 \begin{code}
-data TyFamDef = TyFamDef Kind [(TypeRef, Type)]
+data TyFamDef = TyFamDef Kind [(ConstRef, Type)]
                    deriving (Show, Eq)
 
 defElems :: TyFamDef -> [Type]
@@ -154,7 +157,7 @@ variable is free in a type or object will be of interest to many
 transformations.
 
 \begin{code}
-freeInType :: TypeRef -> Type -> Bool
+freeInType :: VarRef -> Type -> Bool
 freeInType tr (TyCon (Just tr') t1 t2) =
     (tr /= tr' && freeInType tr t2)
     || freeInType tr t1
@@ -163,8 +166,8 @@ freeInType tr (TyCon Nothing t1 t2) =
 freeInType tr (TyApp t o) = freeInType tr t || freeInObj tr o
 freeInType _ _ = False
 
-freeInObj :: TypeRef -> Object -> Bool
-freeInObj tr (Const tr') = tr == tr'
+freeInObj :: VarRef -> Object -> Bool
+freeInObj _ (Const _) = False
 freeInObj tr (Var tr' _) = tr == tr'
 freeInObj tr (Lambda tr' t o) =
      (tr /= tr' && freeInObj tr o)
@@ -177,7 +180,7 @@ named (that is, $\alpha$-conversion is permitted).  Therefore, we can
 define functions that rename variables.
 
 \begin{code}
-renameType :: TypeRef -> TypeRef -> Type -> Type
+renameType :: VarRef -> VarRef -> Type -> Type
 renameType from to = r
     where r (TyCon Nothing t1 t2) = 
             TyCon Nothing (r t1) (r t2)
@@ -187,9 +190,9 @@ renameType from to = r
           r (TyApp t o) = TyApp (r t) (renameObj from to o)
           r t = t 
 
-renameObj :: TypeRef -> TypeRef -> Object -> Object
+renameObj :: VarRef -> VarRef -> Object -> Object
 renameObj from to = r
-    where r (Const tr) = Const (var tr)
+    where r (Const tr) = Const tr
           r (Var tr t) = Var (var tr) (renameType from to t)
           r (Lambda tr t o)
               | tr == from = Lambda tr t' o
@@ -240,7 +243,7 @@ shadowing, $\alpha$-conversions should be performed to ensure
 uniqueness of all type variables prior to using this function.
 
 \begin{code}
-objFreeVars :: Object -> S.Set (TypeRef, Type)
+objFreeVars :: Object -> S.Set (VarRef, Type)
 objFreeVars (Var tr t) = S.singleton (tr, t)
 objFreeVars (Lambda tr t o) =
   (tr, t) `S.delete` objFreeVars o
@@ -248,7 +251,7 @@ objFreeVars (App o1 o2) =
   objFreeVars o1 `S.union` objFreeVars o2
 objFreeVars _ = S.empty
 
-objBoundVars :: Object -> S.Set (TypeRef, Type)
+objBoundVars :: Object -> S.Set (VarRef, Type)
 objBoundVars (Lambda tr t o) =
   S.singleton (tr, t) `S.union` objBoundVars o
 objBoundVars (App o1 o2) =

@@ -53,10 +53,10 @@ always be the same type family as the judgement definition describes,
 as that would be the original criteria for inclusion.
 
 \begin{code}
-data InfRules = InfRules TyFamRef Kind [(TypeRef, InfRule)]
+data InfRules = InfRules TyFamRef Kind [(ConstRef, InfRule)]
 data InfRule = InfRule [Judgement] Conclusion
 type Judgement = (JudgementEnv, TyFamRef, [Object])
-type JudgementEnv = (S.Set (TypeRef, Type), [(TyFamRef, [Object])])
+type JudgementEnv = (S.Set (VarRef, Type), [(TyFamRef, [Object])])
 type Conclusion = (TyFamRef, [Object])
 \end{code}
 
@@ -121,13 +121,13 @@ finite amount of premises.
 
 \begin{code}
 fixShadowing :: [(TyFamRef, [Object])] 
-             -> (TypeRef, Type)
-             -> (TypeRef, Type)
+             -> (VarRef, Type)
+             -> (VarRef, Type)
 fixShadowing ps (tr, t)
     | available tr = (tr, t)
     | otherwise    = (tr', renameType tr tr' t)
     where available tr'' = all (not . any (freeInObj tr'') . snd) ps
-          trs  = tr : [ TypeRef (tn ++ "'") | TypeRef tn <- trs ]
+          trs  = tr : [ VarRef (tn ++ "'") | VarRef tn <- trs ]
           tr' = head $ filter available trs
 \end{code}
 
@@ -137,7 +137,7 @@ We will eventually need to know the set of type variables mentioned
 by a given inference rule.
 
 \begin{code}
-infRuleTypeVars :: InfRule -> S.Set (TypeRef, Type)
+infRuleTypeVars :: InfRule -> S.Set (VarRef, Type)
 infRuleTypeVars (InfRule js (_, os)) =
   foldl S.union (ovars os) $ map jvars js
     where ovars = mconcat . map objFreeVars
@@ -145,7 +145,7 @@ infRuleTypeVars (InfRule js (_, os)) =
           jevars (vars, aps) =
             (mconcat $ map (ovars . snd) aps) `S.difference` vars
 
-infRuleBoundVars :: InfRule -> S.Set (TypeRef, Type)
+infRuleBoundVars :: InfRule -> S.Set (VarRef, Type)
 infRuleBoundVars (InfRule js (_, os)) =
   foldl S.union (ovars os) $ map jvars js
     where ovars = mconcat . map objBoundVars

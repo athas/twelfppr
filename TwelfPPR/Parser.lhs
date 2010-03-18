@@ -489,7 +489,7 @@ toKind vs (TSchem (name, t1) t2) =
       where vs' = M.insert name ty1 vs
             ty1 = toType vs t1
             k   = toKind vs' t2
-            tr  = LF.TypeRef name
+            tr  = LF.VarRef name
 toKind _ _ = error "Invalid kind declaration"
 \end{code}
 
@@ -502,7 +502,7 @@ buildFamily :: LF.TyFamRef -> LF.Kind -> [Decl] -> LF.TyFamDef
 buildFamily (LF.TyFamRef s) k =
   LF.TyFamDef k . map convert . catMaybes . map pick
     where pick (DTerm tr t) 
-              | ok (conclusion t) = Just (LF.TypeRef tr, t)
+              | ok (conclusion t) = Just (LF.ConstRef tr, t)
           pick _ = Nothing
           ok (TApp t _)        = ok t
           ok (TConstant s2)    = s == s2
@@ -533,7 +533,7 @@ toType :: M.Map String LF.Type -> Term -> LF.Type
 toType vs (TArrow t1 t2) =
   LF.TyCon Nothing (toType vs t1) (toType vs t2)
 toType vs (TSchem (name, t1) t2) = 
-  LF.TyCon (Just $ LF.TypeRef name) ty1 ty2
+  LF.TyCon (Just $ LF.VarRef name) ty1 ty2
       where ty1 = toType vs t1
             vs' = M.insert name ty1 vs
             ty2 = toType vs' t2
@@ -575,17 +575,17 @@ ascriptions.
 \begin{code}
 toObject :: M.Map String LF.Type -> Term -> LF.Object
 toObject vs (TLambda (name, t1) t2) = 
-  LF.Lambda (LF.TypeRef name) ty1 (toObject vs' t2)
+  LF.Lambda (LF.VarRef name) ty1 (toObject vs' t2)
       where vs' = M.insert name ty1 vs
             ty1 = toType vs t1
 toObject vs (TVar t) =
   maybe constant var $ M.lookup t vs
-    where constant = LF.Const $ LF.TypeRef t
-          var ty   = LF.Var (LF.TypeRef t) ty
+    where constant = LF.Const $ LF.ConstRef t
+          var ty   = LF.Var (LF.VarRef t) ty
 toObject vs (TConstant t) =
   maybe constant var $ M.lookup t vs
-    where constant = LF.Const $ LF.TypeRef t
-          var ty   = LF.Var (LF.TypeRef t) ty
+    where constant = LF.Const $ LF.ConstRef t
+          var ty   = LF.Var (LF.VarRef t) ty
 toObject vs (TApp t1 t2)      =
   LF.App (toObject vs t1) (toObject vs t2)
 toObject vs (TAscription t _) = toObject vs t

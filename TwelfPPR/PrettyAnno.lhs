@@ -56,7 +56,7 @@ operator is encountered.
 
 \begin{code}
 data PrettyAnno = ConstAppAnno TyFamRef String
-                | ConstAnno TypeRef String
+                | ConstAnno ConstRef String
                 | TypeVarAnno TyFamRef String
                 | BoundVarAnno TyFamRef String
 \end{code}
@@ -73,7 +73,7 @@ slightly more complicated, and will be described further below.
 \begin{code}
 prettifiers :: MonadPrint m => [PrettyAnno] 
             -> (Prettifier TyFamRef m,
-                Prettifier TypeRef m,
+                Prettifier ConstRef m,
                 TypeVarPrinter m,
                 TypeVarPrinter m,
                 SymPrettifier m)
@@ -175,7 +175,7 @@ so we have to define a different one.
 
 \begin{code}
 prettifyRuleSym :: MonadPrint m =>
-                   M.Map TypeRef String -> SymPrettifier m
+                   M.Map ConstRef String -> SymPrettifier m
 prettifyRuleSym dm sig (tr, rs) =
     case M.lookup tr dm of
       Nothing -> defPrettyRuleSym sig (tr, rs)
@@ -183,10 +183,10 @@ prettifyRuleSym dm sig (tr, rs) =
                               mapM prettyPremise rs)
       where wrap x = "{" ++ x ++ "}"
             prettyPremise ([], (kr@(TyFamRef kn), _)) = do
-              p <- pprTypeVar (TypeRef kn) (TyName kr)
+              p <- pprTypeVar (VarRef kn) (TyName kr)
               return [p]
             prettyPremise (kr@(TyFamRef kn):tms, ka) = do
-              let tr' = TypeRef $ "$" ++ kn
+              let tr' = VarRef $ "$" ++ kn
               s    <- bindingVar tr' $ pprTypeVar tr' (TyName kr)
               more <- prettyPremise (tms, ka)
               return (s : more)
@@ -203,7 +203,7 @@ are separated by whitespace (in a file, for example by line breaks).
 \begin{code}
 prettyAnno :: GenParser Char () PrettyAnno
 prettyAnno = (    string "type"  *> f ConstAppAnno TyFamRef
-              <|> string "const" *> f ConstAnno TypeRef
+              <|> string "const" *> f ConstAnno ConstRef
               <|> string "var"   *> f TypeVarAnno TyFamRef
               <|> string "boundvar" *> f BoundVarAnno TyFamRef) <* spaces
     where f c sc = spaces *>

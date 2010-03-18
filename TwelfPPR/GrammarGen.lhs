@@ -92,7 +92,7 @@ in the type definitions, but also which kinds can appear as free
 variables in subterms.
 
 \begin{code}
-type ProdRule = ([(TypeRef, RuleSymbol)], Bool)
+type ProdRule = ([(ConstRef, RuleSymbol)], Bool)
 type RuleSymbol = [([TyFamRef], TyFamUsage)]
 type TyFamUsage = (TyFamRef, FreeVarContext)
 type FreeVarContext = S.Set TyFamRef
