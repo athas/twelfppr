@@ -136,6 +136,7 @@ premises are constant.
 
 \begin{code}
 prodRulePossible :: TyFamDef -> Bool
+prodRulePossible (TyFamDef _ []) = False
 prodRulePossible kd = all check $ defElems kd
     where check (TyCon _ _ t)       = check t
           check (TyName _)          = True

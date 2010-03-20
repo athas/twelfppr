@@ -176,14 +176,15 @@ so we have to define a different one.
 \begin{code}
 prettifyRuleSym :: MonadPrint m =>
                    M.Map ConstRef String -> SymPrettifier m
-prettifyRuleSym dm sig (tr, rs) =
+prettifyRuleSym dm sig (tr, rs) = do
     case M.lookup tr dm of
       Nothing -> defPrettyRuleSym sig (tr, rs)
       Just s  -> liftM (s++) (liftM (concatMap wrap . concat) $
                               mapM prettyPremise rs)
       where wrap x = "{" ++ x ++ "}"
-            prettyPremise ([], (kr@(TyFamRef kn), _)) = do
-              p <- pprTypeVar (VarRef kn) (TyName kr)
+            prettyPremise ([], ku@(kr, _)) = do
+              vr <- namer sig ku
+              p <- pprTypeVar vr (TyName kr)
               return [p]
             prettyPremise (kr@(TyFamRef kn):tms, ka) = do
               let tr' = VarRef $ "$" ++ kn

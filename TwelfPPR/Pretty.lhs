@@ -40,6 +40,7 @@ module TwelfPPR.Pretty ( prettyAllRules
                        , prettyConst
                        , prettyName
                        , prettyProd
+                       , namer
                        , prettyRules
                        , premiseWithContext
                        , judgementWithContext
