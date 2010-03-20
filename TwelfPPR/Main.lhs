@@ -183,7 +183,10 @@ ppr sig = do
           pprinf (kr, kd) = (kr, pprAsInfRules (kr, kd))
           nonprods = filter (not . prodRulePossible . snd) $ defs
           kargs KiType = []
-          kargs (KiCon _ ty k) = ty : kargs k
+          kargs (KiCon mvr ty k)
+              | maybe True (not . flip freeInKind k) mvr =
+                  ty : kargs k
+              | otherwise = kargs k
 \end{code}
 
 \begin{code}

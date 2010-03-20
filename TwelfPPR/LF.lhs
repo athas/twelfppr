@@ -32,6 +32,7 @@ module TwelfPPR.LF ( TyFamRef(..)
                    , Signature
                    , freeInType
                    , freeInObj
+                   , freeInKind
                    , renameType
                    , renameObj
                    , referencedTyFams
@@ -173,6 +174,13 @@ freeInObj tr (Lambda tr' t o) =
      (tr /= tr' && freeInObj tr o)
      || freeInType tr t
 freeInObj tr (App o1 o2) = freeInObj tr o1 || freeInObj tr o2
+
+freeInKind :: VarRef -> Kind -> Bool
+freeInKind _ KiType = False
+freeInKind vr (KiCon mvr ty k) =
+  maybe subfree (vr==) mvr
+    where subfree =    freeInType vr ty 
+                    || freeInKind vr k
 \end{code}
 
 The meaning of an LF term is independent of how its type variables are
