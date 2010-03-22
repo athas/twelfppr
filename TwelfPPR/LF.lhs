@@ -48,7 +48,7 @@ import qualified Data.Set as S
 The full LF type theory is defined by the following grammar.
 \\
 \begin{tabular}{lrcl}
-TyFams & $K$ & ::= & $\text{type} \mid \Pi x:A.K$ \\
+Kinds & $K$ & ::= & $\text{type} \mid \Pi x:A.K$ \\
 Families & $A$ & ::= & $a \mid A\ M \mid \Pi x:A_1.A_2$ \\
 Objects & $M$ & ::= & $c \mid x \mid \lambda x:A. M \mid M_1\ M_2$ \\
 Signatures & $\Sigma$ & ::= & $\cdot \mid \Sigma, a:K \mid \Sigma,
