@@ -66,8 +66,9 @@ the type family to its corresponding inference rule.
 
 \begin{code}
 pprAsInfRules :: (TyFamRef, TyFamDef) -> InfRules
-pprAsInfRules (kr, TyFamDef k ms) = 
-  InfRules kr k $ map (second pprAsRule) ms
+pprAsInfRules (kr, df) = 
+  InfRules kr (defKind df) ps
+      where ps = map (second pprAsRule) $ defConstants df
 \end{code}
 
 \begin{code}

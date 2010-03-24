@@ -499,16 +499,24 @@ if its conclusion (see above) is in the type family.
 
 \begin{code}
 buildFamily :: LF.TyFamRef -> LF.Kind -> [Decl] -> LF.TyFamDef
-buildFamily (LF.TyFamRef s) k =
-  LF.TyFamDef k . map convert . catMaybes . map pick
-    where pick (DTerm tr t) 
+buildFamily (LF.TyFamRef s) k ds =
+  LF.TyFamDef k (consts ds) (abbs ds)
+    where pickCs (DTerm tr t) 
               | ok (conclusion t) = Just (LF.ConstRef tr, t)
-          pick _ = Nothing
+          pickCs _ = Nothing
+          pickAs (DDefinition tr t1 t2)
+              | ok (conclusion t1) = Just (LF.ConstRef tr, t1, t2)
+          pickAs _ = Nothing
           ok (TApp t _)        = ok t
           ok (TConstant s2)    = s == s2
           ok (TAscription t _) = ok t
           ok _                 = False
-          convert (name, t)    = (name, toType M.empty t)
+          convertT (name, t)   = (name, toType M.empty t)
+          convertA (name, ty, t)   = ( name
+                                     , toType M.empty ty
+                                     , toObject M.empty t)
+          consts  = map convertT . catMaybes . map pickCs
+          abbs    = map convertA . catMaybes . map pickAs
 \end{code}
 
 Objects and types are merged in a single syntactical category in

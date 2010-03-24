@@ -136,11 +136,14 @@ A type family definition maps type names to the actual types (or
 specifically, type families) themselves.
 
 \begin{code}
-data TyFamDef = TyFamDef Kind [(ConstRef, Type)]
-                   deriving (Show, Eq)
+data TyFamDef = TyFamDef {
+      defKind      :: Kind
+    , defConstants :: [(ConstRef, Type)]
+    , defAbbrevs   :: [(ConstRef, Type, Object)]
+    } deriving (Show, Eq)
 
 defElems :: TyFamDef -> [Type]
-defElems (TyFamDef _ l) = map snd l
+defElems = map snd . defConstants
 \end{code}
 
 A signature is a map of names of type family names to type

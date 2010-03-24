@@ -92,7 +92,7 @@ in the type definitions, but also which kinds can appear as free
 variables in subterms.
 
 \begin{code}
-type GrammarRule = ([(ConstRef, Production)], Bool)
+type GrammarRule = ( [(ConstRef, Production)], Bool)
 type Production = [([TyFamRef], TyFamUsage)]
 type TyFamUsage = (TyFamRef, FreeVarContext)
 type FreeVarContext = S.Set TyFamRef
@@ -136,7 +136,7 @@ premises are constant.
 
 \begin{code}
 prodRulePossible :: TyFamDef -> Bool
-prodRulePossible (TyFamDef _ []) = False
+prodRulePossible (TyFamDef _ [] _) = False
 prodRulePossible kd = all check $ defElems kd
     where check (TyCon _ _ t)       = check t
           check (TyName _)          = True
@@ -185,21 +185,19 @@ pprWithContext :: Contexter
                -> FreeVarContext
                -> (TyFamRef, TyFamDef)
                -> GrammarRule
-pprWithContext con c (kr, TyFamDef k ms) = 
-  (syms, kr `S.member` c && (hasVar kr $ TyFamDef k ms))
-    where syms = map (second $ typeSymbol con c) ms
+pprWithContext con c (kr, fd) = 
+  ( syms $ defConstants fd
+  , kr `S.member` c && (hasVar kr fd) )
+    where syms = map (second $ typeProd con c)
 \end{code}
 
-A term without premises is printed as its capitalised name, otherwise
-it is printed as its name applied to a tuple containing its premises.
-
 \begin{code}
-typeSymbol :: Contexter
-           -> FreeVarContext
-           -> Type
-           -> Production
-typeSymbol _ _ (TyName _) = []
-typeSymbol con c t = map (handlePremise con c) $ premises t
+typeProd :: Contexter
+         -> FreeVarContext
+         -> Type
+         -> Production
+typeProd _ _ (TyName _) = []
+typeProd con c t = map (handlePremise con c) $ premises t
 
 handlePremise :: Contexter
               -> FreeVarContext

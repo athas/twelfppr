@@ -33,6 +33,7 @@ module TwelfPPR.Main ( PPRConfig(..)
 
 \begin{code}
 import Control.Applicative
+import Control.Arrow
 import Control.Monad.CatchIO
 import Control.Monad.Reader
 import Control.Monad.State
@@ -164,6 +165,10 @@ ppr :: Signature -> PPR String
 ppr sig = do
   prefix <- asks texcmd_prefix
   con <- asks use_contexts
+  let kenv kr =
+        case M.lookup kr (M.fromList irs) of
+          Just (InfRules _ k _) -> kargs k
+          Nothing -> error "Unknown kind reference"
   prods <- do
     simple <- asks ignore_vars
     let fprod = (pprAsProd sig $
@@ -173,20 +178,16 @@ ppr sig = do
     rules <- M.toList <$> getsGGenEnv prod_rules
     prettyAllProds sig prefix rules
   infs  <- do
-    let irs = map pprinf nonprods
-    let kenv kr = case M.lookup kr (M.fromList irs) of
-                    Just (InfRules _ k _) -> kargs k
-                    Nothing -> error "Unknown kind reference"
     prettyAllRules kenv con prefix (map snd irs)
-  return $ infs ++ "\n" ++ prods
+  abbrs <- do
+    prettyAllAbbrs prefix $ map (second defAbbrevs) defs
+  return $ intercalate "\n" [infs, prods, abbrs]
     where defs = M.toList sig
+          irs = map pprinf nonprods
           pprinf (kr, kd) = (kr, pprAsInfRules (kr, kd))
           nonprods = filter (not . prodRulePossible . snd) $ defs
           kargs KiType = []
-          kargs (KiCon mvr ty k)
-              | maybe True (not . flip freeInKind k) mvr =
-                  ty : kargs k
-              | otherwise = kargs k
+          kargs (KiCon _ ty k) = ty : kargs k
 \end{code}
 
 \begin{code}

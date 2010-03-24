@@ -20,6 +20,7 @@ This module defines primitives for printing Twelf terms by themselves.
 \begin{code}
 module TwelfPPR.Pretty ( prettyAllRules
                        , prettyAllProds
+                       , prettyAllAbbrs
                        , PrintConf(..)
                        , emptyPrintConf
                        , SymPrettifier
@@ -49,6 +50,7 @@ module TwelfPPR.Pretty ( prettyAllRules
                        , splitVar )
     where
 
+import Control.Arrow
 import Control.Monad.Reader
 
 import Data.Char
@@ -134,6 +136,17 @@ cfgVarMaps ts ms = do
   mm <- varMap (asksPrintConf prettyBoundVar) ms
   modifyPrintEnv $ \e -> e { type_vars = vm
                            , bound_vars = mm }
+
+withVarMaps :: MonadPrint m =>
+               S.Set (VarRef, Type)
+            -> S.Set (VarRef, Type)
+            -> m a -> m a
+withVarMaps ts ms m = do
+  pe <- getPrintEnv
+  cfgVarMaps ts ms
+  val <- m
+  putPrintEnv pe
+  return val
 \end{code}
 
 \section{Generalities}
@@ -362,7 +375,7 @@ emptyPrintConf = PrintConf
   { prettyTypeApp   = defPrettyTypeApp
   , prettyConstApp  = defPrettyConstApp
   , prettyTypeVar   = defPrettyTypeVar
-  , prettyBoundVar   = defPrettyBoundVar
+  , prettyBoundVar  = defPrettyBoundVar
   , prettyRuleSym   = defPrettyRuleSym
   , prettyJudgement = judgementWithContext
   , premisePrinter  = premiseWithContext 
@@ -443,10 +456,13 @@ prettyAllProds :: MonadPrint m => Signature
                -> [(TyFamUsage, GrammarRule)]
                -> m String
 prettyAllProds sig prefix prs = do
-  branches <- mapM (uncurry $ prettyProd sig) prs
-  return $ prodcmd $ foldl (\acc x -> x++braces acc) def branches
-      where prodcmd = newcommand (prefix ++ "prod") 1
-            def = "{\\PackageError{twelfppr}{Unknown definition}{}}"
+  prodbody <- liftM (foldl f def)
+                $ mapM (uncurry $ prettyProd sig) prs
+  return $ prodcmd prodbody
+    where f ax x  = ( x++braces ax )
+          prodcmd = cmdf "prod"
+          cmdf s  = newcommand (prefix ++ s) 1
+          def = "{\\PackageError{twelfppr}{Unknown definition}{}}"
 \end{code}
 
 \begin{code}
@@ -466,11 +482,12 @@ prettyProd sig ku@(kr@(TyFamRef kn), _) prod@(ts, vars) = do
             then liftM (:terms) (bindingVar tr' $
                                    pprTypeVar tr' (TyName kr))
             else return terms
-  return (ifthenbranch (argescape kn) $
-            "\\begin{tabular}{rl}\n$" ++
-            texescape name ++ "$ ::=& $" ++ 
-            intercalate "$\\\\ \n $\\mid$ & $" terms' ++
-            "$\n" ++ "\\end{tabular}\n")
+  let prodbody = ifthenbranch (argescape kn) $
+                   "\\begin{tabular}{rl}\n$" ++
+                   texescape name ++ "$ ::=& $" ++ 
+                   intercalate "$\\\\ \n $\\mid$ & $" terms' ++
+                 "$\n" ++ "\\end{tabular}\n"
+  return prodbody
 \end{code}
 
 \begin{code}
@@ -480,21 +497,6 @@ prettySymbol :: MonadPrint m => Signature
 prettySymbol sig (tr, ts) = do
   prs <- asksPrintConf prettyRuleSym
   prs sig (tr, ts)
-
-defPrettyRuleSym :: MonadPrint m => SymPrettifier m
-defPrettyRuleSym _ (ConstRef tn, []) =
-  return $ prettyName tn
-defPrettyRuleSym sig (ConstRef tn, ts) = do
-  args <- liftM (intercalate ", ") $ mapM prettyPremise ts
-  return $ prettyName tn ++ "(" ++ args ++ ")"
-      where prettyPremise ([], ku@(kr, _)) = do
-              tr <- namer sig ku
-              pprTypeVar tr (TyName kr)
-            prettyPremise (kr@(TyFamRef kn):tms, ka) = do
-              let tr = VarRef $ "$" ++ kn
-              more <- prettyPremise (tms, ka)
-              s    <- bindingVar tr $ pprTypeVar tr (TyName kr)
-              return (s ++ "." ++ more)
 \end{code}
 
 \begin{code}
@@ -553,4 +555,100 @@ prodRuleBoundVars sig _ (syms, _) = do
                                  , TyName kr')
                 where c = initContext kr' $
                           fromJust $ M.lookup kr' sig
+\end{code}
+
+\section{Abbreviations}
+
+\begin{code}
+prettyAllAbbrs :: MonadPrint m => String
+               -> [(TyFamRef, [(ConstRef, Type, Object)])]
+               -> m String
+prettyAllAbbrs prefix tfs = do
+  (derivsbody, derivbody) <-
+      liftM (foldl f (def, def))
+                $ mapM (uncurry $ prettyAbbrs) tfs
+  return $ intercalate "\n" [ derivscmd derivsbody
+                            , derivcmd derivbody ]
+    where f (ax, ay) (x, y) = ( x++braces ax
+                              , foldl (flip (++) . braces)
+                                (braces ay) y)
+          derivcmd  = cmdf "deriv"
+          derivscmd = cmdf "derivs"
+          cmdf s = newcommand (prefix ++ s) 1
+          def = "{\\PackageError{twelfppr}{Unknown definition}{}}"
+\end{code}
+
+\begin{code}
+prettyAbbrs :: MonadPrint m => TyFamRef 
+            -> [(ConstRef, Type, Object)]
+            -> m (String, [String])
+prettyAbbrs (TyFamRef tn) abbrs = do
+  abbrs' <- mapM procAbbr abbrs
+  let derivbranches = map (ifbranch . second wrapalign) abbrs'
+      derivsbody    = ifbranch $ second wrapalign $
+                        (tn, intercalate "\n"
+                               (map snd abbrs'))
+  return (derivsbody, derivbranches)
+    where procAbbr (cr@(ConstRef cn), _, o) = do
+            abbr' <- prettyAbbr (cr, o)
+            return (cn, abbr')
+          ifbranch (check, body) =
+            ifthenbranch (argescape check) body
+          wrapalign = inEnv "align*" Nothing
+\end{code}
+
+\begin{code}
+prettyAbbr :: MonadPrint m => (ConstRef, Object) -> m String
+prettyAbbr (cr, o) = do
+  let (o2, gvs, lvs, os) = abbrArgs cr o
+      lvs' = lvs `S.union` objBoundVars o2
+  withVarMaps gvs lvs' $ do
+    bindingVars (map fst $ S.toList lvs) $ do
+      lhs <- pprConstApp cr os
+      rhs <- pprObject o2
+      return (lhs ++ "&\\triangleq&" ++ rhs ++ "\\\\")
+\end{code}
+
+\begin{code}
+abbrArgs :: ConstRef
+         -> Object
+         -> ( Object
+            , S.Set (VarRef, Type)
+            , S.Set (VarRef, Type)
+            , [Object])
+abbrArgs (ConstRef cn) o =
+  let tvcs = map (VarRef . (:[])) ['a'..]
+      (ro, gvs, bvs, os) = split o tvcs
+  in (ro, S.fromList gvs, S.fromList bvs, os)
+    where split (Lambda vr ty@(TyName _) o') vcs =
+              let (ro, gvs, bvs, os) = split o' (filter (/=vr) vcs)
+              in  (ro, (vr, ty):gvs, bvs, Var vr ty:os)
+          split (Lambda vr ty o') vcs =
+            let (v, vcs') = extract ty vcs []
+                (ro, gvs, bvs, os) = split o' (filter (/=vr) vcs')
+                vars = map (uncurry Var) v
+            in ( ro
+               , (vr, ty) : gvs
+               , v ++ bvs
+               , vars ++ (foldl App (Var vr ty) vars : os) )
+          split o' _ = (o', [], [], [])
+          extract (TyName _) vcs r = (reverse r, vcs)
+          extract (TyCon Nothing ty1 ty2) (vc:vcs) r =
+            extract ty2 vcs ((vc, ty1):r)
+          extract _ _ _ = error $ "Cannot handle abbreviation " ++ cn
+
+defPrettyRuleSym :: MonadPrint m => SymPrettifier m
+defPrettyRuleSym _ (ConstRef tn, []) =
+  return $ prettyName tn
+defPrettyRuleSym sig (ConstRef tn, ts) = do
+  args <- liftM (intercalate ", ") $ mapM prettyPremise ts
+  return $ prettyName tn ++ "(" ++ args ++ ")"
+      where prettyPremise ([], ku@(kr, _)) = do
+              tr <- namer sig ku
+              pprTypeVar tr (TyName kr)
+            prettyPremise (kr@(TyFamRef kn):tms, ka) = do
+              let tr = VarRef $ "$" ++ kn
+              more <- prettyPremise (tms, ka)
+              s    <- bindingVar tr $ pprTypeVar tr (TyName kr)
+              return (s ++ "." ++ more)
 \end{code}
