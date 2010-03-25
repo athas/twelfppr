@@ -221,7 +221,7 @@ maybeReadAnnotations = do
                      , prettyConstApp = pta
                      , prettyTypeVar  = ptv
                      , prettyBoundVar = pmv
-                     , prettyRuleSym  = prs } }
+                     , prettyProd     = prs } }
 \end{code}
 
 \section{Reading declarations}

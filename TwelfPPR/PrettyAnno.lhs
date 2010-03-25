@@ -76,12 +76,12 @@ prettifiers :: MonadPrint m => [PrettyAnno]
                 Prettifier ConstRef m,
                 TypeVarPrinter m,
                 TypeVarPrinter m,
-                SymPrettifier m)
+                ProdPrettifier m)
 prettifiers descs = ( f defPrettyTypeApp $ pick kindapp
                     , f defPrettyConstApp $ pick tyapp
                     , prettifyTypeVar $ pick tyvar
                     , prettifyBoundVar $ pick boundvar
-                    , prettifyRuleSym $ pick tyapp)
+                    , prettifyProd $ pick tyapp)
     where pick :: Ord a =>
                   (PrettyAnno -> Maybe (a, String))
                       -> M.Map a String
@@ -174,11 +174,11 @@ application printer shown above will not yield satisfactory results,
 so we have to define a different one.
 
 \begin{code}
-prettifyRuleSym :: MonadPrint m =>
-                   M.Map ConstRef String -> SymPrettifier m
-prettifyRuleSym dm sig (tr, rs) = do
+prettifyProd :: MonadPrint m =>
+                   M.Map ConstRef String -> ProdPrettifier m
+prettifyProd dm sig (tr, rs) = do
     case M.lookup tr dm of
-      Nothing -> defPrettyRuleSym sig (tr, rs)
+      Nothing -> defPrettyProd sig (tr, rs)
       Just s  -> liftM (s++) (liftM (concatMap wrap . concat) $
                               mapM prettyPremise rs)
       where wrap x = "{" ++ x ++ "}"

@@ -23,7 +23,7 @@ module TwelfPPR.Pretty ( prettyAllRules
                        , prettyAllAbbrs
                        , PrintConf(..)
                        , emptyPrintConf
-                       , SymPrettifier
+                       , ProdPrettifier
                        , Prettifier
                        , TypeVarPrinter
                        , PrintEnv(..)
@@ -34,7 +34,7 @@ module TwelfPPR.Pretty ( prettyAllRules
                        , defPrettyBoundVar
                        , defPrettyConstApp
                        , defPrettyTypeVar
-                       , defPrettyRuleSym
+                       , defPrettyProd
                        , pprVar
                        , pprObject
                        , texVar
@@ -152,7 +152,7 @@ withVarMaps ts ms m = do
 \section{Generalities}
 
 \begin{code}
-type SymPrettifier m =
+type ProdPrettifier m =
     Signature -> (ConstRef, Production) -> m String
 type Prettifier o m = o -> [Object] -> m String
 \end{code}
@@ -364,7 +364,7 @@ data PrintConf m = PrintConf
   , prettyConstApp  :: Prettifier ConstRef m
   , prettyTypeVar   :: TypeVarPrinter m
   , prettyBoundVar  :: TypeVarPrinter m
-  , prettyRuleSym   :: SymPrettifier m
+  , prettyProd      :: ProdPrettifier m
   , prettyJudgement :: JudgementPrinter m
   , premisePrinter  :: PremisePrinter m
   , bindings        :: S.Set VarRef
@@ -376,7 +376,7 @@ emptyPrintConf = PrintConf
   , prettyConstApp  = defPrettyConstApp
   , prettyTypeVar   = defPrettyTypeVar
   , prettyBoundVar  = defPrettyBoundVar
-  , prettyRuleSym   = defPrettyRuleSym
+  , prettyProd      = defPrettyProd
   , prettyJudgement = judgementWithContext
   , premisePrinter  = premiseWithContext 
   , bindings        = S.empty
@@ -495,7 +495,7 @@ pprProd :: MonadPrint m => Signature
         -> (ConstRef, Production)
         -> m String
 pprProd sig (tr, ts) = do
-  prs <- asksPrintConf prettyRuleSym
+  prs <- asksPrintConf prettyProd
   prs sig (tr, ts)
 \end{code}
 
@@ -637,10 +637,10 @@ abbrArgs (ConstRef cn) o =
             extract ty2 vcs ((vc, ty1):r)
           extract _ _ _ = error $ "Cannot handle abbreviation " ++ cn
 
-defPrettyRuleSym :: MonadPrint m => SymPrettifier m
-defPrettyRuleSym _ (ConstRef tn, []) =
+defPrettyProd :: MonadPrint m => ProdPrettifier m
+defPrettyProd _ (ConstRef tn, []) =
   return $ prettyName tn
-defPrettyRuleSym sig (ConstRef tn, ts) = do
+defPrettyProd sig (ConstRef tn, ts) = do
   args <- liftM (intercalate ", ") $ mapM prettyPremise ts
   return $ prettyName tn ++ "(" ++ args ++ ")"
       where prettyPremise ([], ku@(kr, _)) = do
