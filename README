@@ -1,0 +1,17 @@
+twelfppr uses Cabal for build management, so you should be able to
+compile and install it with a simple command:
+
+  cabal install
+
+(Ignore the Makefile)
+
+This should pull down the (few) dependencies and install the twelfppr
+binary in ~/.cabal/bin.
+
+Now try running it on some signature:
+
+~/.cabal/bin/twelfppr -t ~/twelf/bin/twelf-server sources.cfg
+
+Note that the signature defined by sources.cfg should be loadable by
+Twelf without error, or twelfppr will fail with a cryptic error
+message.
