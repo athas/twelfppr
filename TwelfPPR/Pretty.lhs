@@ -19,7 +19,7 @@ This module defines primitives for printing Twelf terms by themselves.
 
 \begin{code}
 module TwelfPPR.Pretty ( prettyAllRules
-                       , prettyAllProds
+                       , prettyAllGrmRules
                        , prettyAllAbbrs
                        , PrintConf(..)
                        , emptyPrintConf
@@ -40,7 +40,7 @@ module TwelfPPR.Pretty ( prettyAllRules
                        , texVar
                        , texConst
                        , prettyName
-                       , prettyProd
+                       , prettyGrammar
                        , namer
                        , prettyRules
                        , premiseWithContext
@@ -280,7 +280,7 @@ prettyRules kenv con irs@(InfRules kr@(TyFamRef name) _ rules) = do
               body <- prettyRule kenv tr'
               return (argescape tn', body)
             procVar kr'@(TyFamRef kn') = do
-              body <- texVarRule kenv name kr'
+              body <- pprVarRule kenv name kr'
               return ( argescape $ "var " ++ name ++ " " ++ kn'
                      , body)
             ifbranch (check, body) =
@@ -300,10 +300,10 @@ prettyRule kenv (ConstRef tn, ir@(InfRule ps con)) = do
     return ("\\frac{\\displaystyle{\n" ++ intercalate "\n\\quad\n" ps' ++
             "}}{\\displaystyle{\n" ++ con' ++ "\n}}")
 
-texVarRule :: MonadPrint m => 
-                 (TyFamRef -> [Type])
-              -> String -> TyFamRef -> m String
-texVarRule kenv name kr@(TyFamRef kn) = do
+pprVarRule :: MonadPrint m => 
+              (TyFamRef -> [Type])
+           -> String -> TyFamRef -> m String
+pprVarRule kenv name kr@(TyFamRef kn) = do
   cfgVarMaps (S.fromList $ zip trs ts) S.empty
   asRule rulename $
     pprJudgement kenv (S.empty, [(kr, vs)]) (kr, vs)
@@ -451,13 +451,13 @@ bindingVars (tr:trs) m = bindingVar tr $
 \section{Rendering production rules}
 
 \begin{code}
-prettyAllProds :: MonadPrint m => Signature
-               -> String
-               -> [(TyFamUsage, GrammarRule)]
-               -> m String
-prettyAllProds sig prefix prs = do
+prettyAllGrmRules :: MonadPrint m => Signature
+                  -> String
+                  -> [(TyFamUsage, GrammarRule)]
+                  -> m String
+prettyAllGrmRules sig prefix prs = do
   prodbody <- liftM (foldl f def)
-                $ mapM (uncurry $ prettyProd sig) prs
+                $ mapM (uncurry $ prettyGrammar sig) prs
   return $ prodcmd prodbody
     where f ax x  = ( x++braces ax )
           prodcmd = cmdf "grammar"
@@ -466,18 +466,18 @@ prettyAllProds sig prefix prs = do
 \end{code}
 
 \begin{code}
-prettyProd :: MonadPrint m => Signature
-           -> TyFamUsage
-           -> GrammarRule
-           -> m String
-prettyProd sig ku@(kr@(TyFamRef kn), _) prod@(ts, vars) = do
+prettyGrammar :: MonadPrint m => Signature
+              -> TyFamUsage
+              -> GrammarRule
+              -> m String
+prettyGrammar sig ku@(kr@(TyFamRef kn), _) prod@(ts, vars) = do
   tvs    <- prodRuleTypeVars sig ku prod
   mvs    <- prodRuleBoundVars sig ku prod
   tr@(VarRef tn) <- namer sig ku
   let tr' = VarRef tn
   cfgVarMaps tvs mvs
   name   <- pprVar tr (TyName kr)
-  terms  <- mapM (prettySymbol sig) ts
+  terms  <- mapM (pprProd sig) ts
   terms' <- if vars
             then liftM (:terms) (bindingVar tr' $
                                    pprVar tr' (TyName kr))
@@ -491,10 +491,10 @@ prettyProd sig ku@(kr@(TyFamRef kn), _) prod@(ts, vars) = do
 \end{code}
 
 \begin{code}
-prettySymbol :: MonadPrint m => Signature 
-             -> (ConstRef, Production)
-             -> m String
-prettySymbol sig (tr, ts) = do
+pprProd :: MonadPrint m => Signature 
+        -> (ConstRef, Production)
+        -> m String
+pprProd sig (tr, ts) = do
   prs <- asksPrintConf prettyRuleSym
   prs sig (tr, ts)
 \end{code}

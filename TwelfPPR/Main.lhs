@@ -176,7 +176,7 @@ ppr sig = do
                  else defaultContexter sig)
     mapM_ fprod . filter (prodRulePossible . snd) $ defs
     rules <- M.toList <$> getsGGenEnv prod_rules
-    prettyAllProds sig prefix rules
+    prettyAllGrmRules sig prefix rules
   infs  <- do
     prettyAllRules kenv con prefix (map snd irs)
   abbrs <- do
