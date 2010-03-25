@@ -35,10 +35,10 @@ module TwelfPPR.Pretty ( prettyAllRules
                        , defPrettyConstApp
                        , defPrettyTypeVar
                        , defPrettyRuleSym
-                       , pprTypeVar
+                       , pprVar
                        , pprObject
-                       , prettyVar
-                       , prettyConst
+                       , texVar
+                       , texConst
                        , prettyName
                        , prettyProd
                        , namer
@@ -158,36 +158,36 @@ type Prettifier o m = o -> [Object] -> m String
 \end{code}
 
 \begin{code}
-prettyConst :: String -> String
-prettyConst s = "\\textrm{" ++ texescape s ++ "}"
+texConst :: String -> String
+texConst s = "\\textrm{" ++ texescape s ++ "}"
 
-prettyVar :: String -> String
-prettyVar s = case matchRegex r s of
-                Just [name, i] -> texescape name ++ "_{" ++ i ++ "}"
-                _ -> texescape s
-    where r = mkRegex "([^0-9]+)([0-9]+)"
+texVar :: String -> String
+texVar s = texescape name ++
+              maybe "" (\i -> "_{" ++ show i ++ "}") index ++
+              replicate primes '\''
+    where (name, index, primes) = splitVar $ VarRef s
 \end{code}
 
 \begin{code}
 defPrettyTypeApp :: MonadPrint m => Prettifier TyFamRef m
-defPrettyTypeApp (TyFamRef kn) [] = return $ prettyConst kn
+defPrettyTypeApp (TyFamRef kn) [] = return $ texConst kn
 defPrettyTypeApp (TyFamRef kn) os = do
   args <- mapM pprObject os
-  return $ prettyConst kn ++ "(" ++ intercalate ", " args ++ ")"
+  return $ texConst kn ++ "(" ++ intercalate ", " args ++ ")"
 
 defPrettyConstApp :: MonadPrint m => Prettifier ConstRef m
-defPrettyConstApp (ConstRef tn) [] = return $ prettyConst tn
+defPrettyConstApp (ConstRef tn) [] = return $ texConst tn
 defPrettyConstApp (ConstRef tn) os = do
   args <- mapM pprObject os
-  return $ prettyConst tn ++ "(" ++ intercalate ", " args  ++ ")"
+  return $ texConst tn ++ "(" ++ intercalate ", " args  ++ ")"
 
 type TypeVarPrinter m = VarRef -> Type -> m String
 
 defPrettyTypeVar :: MonadPrint m => TypeVarPrinter m
-defPrettyTypeVar (VarRef tn) _ = return $ prettyVar tn
+defPrettyTypeVar (VarRef tn) _ = return $ texVar tn
 
 defPrettyBoundVar :: MonadPrint m => TypeVarPrinter m
-defPrettyBoundVar (VarRef tn) _ = return $ prettyVar $ "$" ++ tn
+defPrettyBoundVar (VarRef tn) _ = return $ texVar $ "$" ++ tn
 \end{code}
 
 \begin{code}
@@ -201,15 +201,15 @@ pprObject :: MonadPrint m => Object -> m String
 pprObject (Const tr) =
   pprConstApp tr []
 pprObject (Var tr ty) = do
-  pprTypeVar tr ty
+  pprVar tr ty
 pprObject (Lambda tr ty o) = bindingVar tr $ do
   body <- pprObject o
-  vs <- pprTypeVar tr ty
+  vs <- pprVar tr ty
   return $ vs ++ "." ++ body
 pprObject (App o1 o2) = descend o1 [o2]
   where descend (Var tr ty) os = do
           args <- mapM pprObject os
-          s    <- pprTypeVar tr ty
+          s    <- pprVar tr ty
           return $ s ++ "[" ++ intercalate "][" args ++ "]"
         descend (Const tr) os = pprConstApp tr os
         descend (App o1' o2') os = descend o1' $ o2' : os
@@ -280,7 +280,7 @@ prettyRules kenv con irs@(InfRules kr@(TyFamRef name) _ rules) = do
               body <- prettyRule kenv tr'
               return (argescape tn', body)
             procVar kr'@(TyFamRef kn') = do
-              body <- prettyVarRule kenv name kr'
+              body <- texVarRule kenv name kr'
               return ( argescape $ "var " ++ name ++ " " ++ kn'
                      , body)
             ifbranch (check, body) =
@@ -291,7 +291,7 @@ prettyRule :: MonadPrint m =>
            -> (ConstRef, InfRule)
            -> m String
 prettyRule kenv (ConstRef tn, ir@(InfRule ps con)) = do
-  cfgVarMaps (infRuleTypeVars ir)
+  cfgVarMaps (infRuleGlobalVars ir)
              (infRuleBoundVars ir)
   asRule tn $ do
     pp   <- asksPrintConf premisePrinter
@@ -300,10 +300,10 @@ prettyRule kenv (ConstRef tn, ir@(InfRule ps con)) = do
     return ("\\frac{\\displaystyle{\n" ++ intercalate "\n\\quad\n" ps' ++
             "}}{\\displaystyle{\n" ++ con' ++ "\n}}")
 
-prettyVarRule :: MonadPrint m => 
+texVarRule :: MonadPrint m => 
                  (TyFamRef -> [Type])
               -> String -> TyFamRef -> m String
-prettyVarRule kenv name kr@(TyFamRef kn) = do
+texVarRule kenv name kr@(TyFamRef kn) = do
   cfgVarMaps (S.fromList $ zip trs ts) S.empty
   asRule rulename $
     pprJudgement kenv (S.empty, [(kr, vs)]) (kr, vs)
@@ -412,8 +412,8 @@ emptyPrintEnv = PrintEnv { name_context = M.empty
                          , type_vars    = M.empty
                          , bound_vars   = M.empty }
 
-pprTypeVar :: MonadPrint m => TypeVarPrinter m
-pprTypeVar tr ty = do
+pprVar :: MonadPrint m => TypeVarPrinter m
+pprVar tr ty = do
   bvs <- asksPrintConf bindings
   vm  <- getsPrintEnv (if tr `S.member` bvs
                        then bound_vars else type_vars)
@@ -476,11 +476,11 @@ prettyProd sig ku@(kr@(TyFamRef kn), _) prod@(ts, vars) = do
   tr@(VarRef tn) <- namer sig ku
   let tr' = VarRef tn
   cfgVarMaps tvs mvs
-  name   <- pprTypeVar tr (TyName kr)
+  name   <- pprVar tr (TyName kr)
   terms  <- mapM (prettySymbol sig) ts
   terms' <- if vars
             then liftM (:terms) (bindingVar tr' $
-                                   pprTypeVar tr' (TyName kr))
+                                   pprVar tr' (TyName kr))
             else return terms
   let prodbody = ifthenbranch (argescape kn) $
                    "\\begin{tabular}{rl}\n$" ++
@@ -645,10 +645,10 @@ defPrettyRuleSym sig (ConstRef tn, ts) = do
   return $ prettyName tn ++ "(" ++ args ++ ")"
       where prettyPremise ([], ku@(kr, _)) = do
               tr <- namer sig ku
-              pprTypeVar tr (TyName kr)
+              pprVar tr (TyName kr)
             prettyPremise (kr@(TyFamRef kn):tms, ka) = do
               let tr = VarRef $ kn
               more <- prettyPremise (tms, ka)
-              s    <- bindingVar tr $ pprTypeVar tr (TyName kr)
+              s    <- bindingVar tr $ pprVar tr (TyName kr)
               return (s ++ "." ++ more)
 \end{code}

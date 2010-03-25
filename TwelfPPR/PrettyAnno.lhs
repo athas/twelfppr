@@ -184,11 +184,11 @@ prettifyRuleSym dm sig (tr, rs) = do
       where wrap x = "{" ++ x ++ "}"
             prettyPremise ([], ku@(kr, _)) = do
               vr <- namer sig ku
-              p <- pprTypeVar vr (TyName kr)
+              p <- pprVar vr (TyName kr)
               return [p]
             prettyPremise (kr@(TyFamRef kn):tms, ka) = do
               let tr' = VarRef $ kn
-              s    <- bindingVar tr' $ pprTypeVar tr' (TyName kr)
+              s    <- bindingVar tr' $ pprVar tr' (TyName kr)
               more <- prettyPremise (tms, ka)
               return (s : more)
 \end{code}

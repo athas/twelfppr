@@ -21,7 +21,7 @@ module TwelfPPR.InfGen ( InfRules(..)
                        , Conclusion
                        , pprAsInfRules
                        , judgeEnv
-                       , infRuleTypeVars
+                       , infRuleGlobalVars
                        , infRuleBoundVars ) 
     where
 
@@ -138,8 +138,8 @@ We will eventually need to know the set of type variables mentioned
 by a given inference rule.
 
 \begin{code}
-infRuleTypeVars :: InfRule -> S.Set (VarRef, Type)
-infRuleTypeVars (InfRule js (_, os)) =
+infRuleGlobalVars :: InfRule -> S.Set (VarRef, Type)
+infRuleGlobalVars (InfRule js (_, os)) =
   foldl S.union (ovars os) $ map jvars js
     where ovars = mconcat . map objFreeVars
           jvars (je, _, os') = jevars je `S.union` ovars os'
