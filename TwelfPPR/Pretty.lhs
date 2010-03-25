@@ -187,7 +187,7 @@ defPrettyTypeVar :: MonadPrint m => TypeVarPrinter m
 defPrettyTypeVar (VarRef tn) _ = return $ prettyVar tn
 
 defPrettyBoundVar :: MonadPrint m => TypeVarPrinter m
-defPrettyBoundVar (VarRef tn) _ = return $ prettyVar tn
+defPrettyBoundVar (VarRef tn) _ = return $ prettyVar $ "$" ++ tn
 \end{code}
 
 \begin{code}
@@ -460,7 +460,7 @@ prettyAllProds sig prefix prs = do
                 $ mapM (uncurry $ prettyProd sig) prs
   return $ prodcmd prodbody
     where f ax x  = ( x++braces ax )
-          prodcmd = cmdf "prod"
+          prodcmd = cmdf "grammar"
           cmdf s  = newcommand (prefix ++ s) 1
           def = "{\\PackageError{twelfppr}{Unknown definition}{}}"
 \end{code}
@@ -474,7 +474,7 @@ prettyProd sig ku@(kr@(TyFamRef kn), _) prod@(ts, vars) = do
   tvs    <- prodRuleTypeVars sig ku prod
   mvs    <- prodRuleBoundVars sig ku prod
   tr@(VarRef tn) <- namer sig ku
-  let tr' = VarRef $ "$" ++ tn
+  let tr' = VarRef tn
   cfgVarMaps tvs mvs
   name   <- pprTypeVar tr (TyName kr)
   terms  <- mapM (prettySymbol sig) ts
@@ -551,7 +551,7 @@ prodRuleBoundVars sig _ (syms, _) = do
             liftM mconcat (mapM (mapM f . fst) ps)
           f kr' = do
             VarRef tn <- namer sig (kr', c)
-            return $ S.singleton ( VarRef $ "$" ++ tn
+            return $ S.singleton ( VarRef tn
                                  , TyName kr')
                 where c = initContext kr' $
                           fromJust $ M.lookup kr' sig
@@ -647,7 +647,7 @@ defPrettyRuleSym sig (ConstRef tn, ts) = do
               tr <- namer sig ku
               pprTypeVar tr (TyName kr)
             prettyPremise (kr@(TyFamRef kn):tms, ka) = do
-              let tr = VarRef $ "$" ++ kn
+              let tr = VarRef $ kn
               more <- prettyPremise (tms, ka)
               s    <- bindingVar tr $ pprTypeVar tr (TyName kr)
               return (s ++ "." ++ more)

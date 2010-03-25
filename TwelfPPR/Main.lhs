@@ -183,9 +183,8 @@ ppr sig = do
     prettyAllAbbrs prefix $ map (second defAbbrevs) defs
   return $ intercalate "\n" [infs, prods, abbrs]
     where defs = M.toList sig
-          irs = map pprinf nonprods
+          irs = map pprinf defs
           pprinf (kr, kd) = (kr, pprAsInfRules (kr, kd))
-          nonprods = filter (not . prodRulePossible . snd) $ defs
           kargs KiType = []
           kargs (KiCon _ ty k) = ty : kargs k
 \end{code}

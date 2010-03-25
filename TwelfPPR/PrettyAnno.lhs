@@ -187,7 +187,7 @@ prettifyRuleSym dm sig (tr, rs) = do
               p <- pprTypeVar vr (TyName kr)
               return [p]
             prettyPremise (kr@(TyFamRef kn):tms, ka) = do
-              let tr' = VarRef $ "$" ++ kn
+              let tr' = VarRef $ kn
               s    <- bindingVar tr' $ pprTypeVar tr' (TyName kr)
               more <- prettyPremise (tms, ka)
               return (s : more)
