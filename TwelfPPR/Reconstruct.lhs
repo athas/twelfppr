@@ -41,7 +41,7 @@ abbreviation definitions, the result will the comparable fully
 type-expanded definition.
 
 \begin{code}
-reconstructDecl :: MonadIO m => Decl -> TwelfMonadT m Decl
+reconstructDecl :: (Functor m, MonadIO m) => Decl -> TwelfMonadT m Decl
 reconstructDecl d = (either (error . show) fst . parse) <$> cmd
     where parse = parseDecl initDeclState "stdin"
           cmd   = runTwelfCmd $ "readDecl\n" ++ show d ++ "\n"
@@ -55,11 +55,11 @@ only pass term and abbreviation definitions to the |readDecl| command,
 as it makes no sense to reconstruct the others.
 
 \begin{code}
-reconstruct :: MonadCatchIO m => String -> [Decl] -> m [Decl]
+reconstruct :: (Functor m, MonadCatchIO m) => String -> [Decl] -> m [Decl]
 reconstruct bin ds = withTwelfServer bin $ do
   runTwelfCmd "set Print.implicit true"
   mapM reconstruct' ds
-    where reconstruct' :: MonadIO m => Decl -> TwelfMonadT m Decl
+    where reconstruct' :: (Functor m, MonadIO m) => Decl -> TwelfMonadT m Decl
           reconstruct' d@(DTerm _ _)         = reconstructDecl d
           reconstruct' d@(DDefinition _ _ _) = reconstructDecl d
           reconstruct' d                     = return d
