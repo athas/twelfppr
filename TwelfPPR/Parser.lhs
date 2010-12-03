@@ -125,19 +125,19 @@ implementation detail, line comments are preferred to block comments,
 and we would thus end with the latter interpreted as the former.  As
 an additional detail, we also consider a percentage sign followed by a
 newline character to be a line comment, as this construct seems to be
-semi-common in actual Twelf code.
+semi-common in actual Twelf code.  It is therefore necessary that we
+define our own lexer.  Fortunately, this is not very hard in Parsec.
 
-It is therefore necessary that we define our own lexer.  Fortunately,
-this is not very hard in Parsec.  The following definitions all
-discard trailing whitespace and comments, thereby assuming that there
-is no leading whitespace.
+To begin with, we handle whitespace as defined by the lexical
+conventions in the Twelf User's Guide.  Note that is includes line-
+and block-comments as well.
 
 \begin{code}
 whiteSpace :: GenParser Char u ()
 whiteSpace = skipMany (simpleSpace <|> oneLineComment <|> multiLineComment <?> "")
-    where oneLineComment = do try (    try (string "% ")
-                                   <|> try (string "%%")
-                                   <|> string "%" <* lookAhead newline)
+    where oneLineComment = do _ <- try (    try (char '%' *> many1 linespaces)
+                                        <|> try (string "%%")
+                                        <|> string "%" <* lookAhead newline)
                               skipMany (satisfy (/= '\n'))
           multiLineComment = try (string "%{") *> inCommentMulti
           inCommentMulti =     try (string "}%") *> return ()
@@ -146,8 +146,15 @@ whiteSpace = skipMany (simpleSpace <|> oneLineComment <|> multiLineComment <?> "
                            <|> oneOf startEnd *> inCommentMulti
                            <?> "end of comment"
               where startEnd = nub ("}%" ++ "%{")
-          simpleSpace = skipMany1 (satisfy isSpace)
+          simpleSpace = skipMany1 (linespaces <|> char '\n')
+          linespaces  = oneOf " \t\r\v\f"
+\end{code}
 
+The following definitions all
+discard trailing whitespace and comments, thereby assuming that there
+is no leading whitespace.
+
+\begin{code}
 lexeme     :: GenParser Char u a -> GenParser Char u a
 lexeme p   = p <* whiteSpace
 symbol     :: String -> GenParser Char u String
