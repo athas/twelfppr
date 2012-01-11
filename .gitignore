@@ -1,0 +1,7 @@
+*.lhs.hs
+*.aux
+*.log
+*.out
+*.pdf
+*.ptb
+*.ps
