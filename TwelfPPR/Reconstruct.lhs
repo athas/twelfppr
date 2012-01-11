@@ -57,7 +57,7 @@ as it makes no sense to reconstruct the others.
 \begin{code}
 reconstruct :: (Functor m, MonadCatchIO m) => String -> [Decl] -> m [Decl]
 reconstruct bin ds = withTwelfServer bin $ do
-  runTwelfCmd "set Print.implicit true"
+  _ <- runTwelfCmd "set Print.implicit true"
   mapM reconstruct' ds
     where reconstruct' :: (Functor m, MonadIO m) => Decl -> TwelfMonadT m Decl
           reconstruct' d@(DTerm _ _)         = reconstructDecl d
