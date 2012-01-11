@@ -43,7 +43,7 @@
 \end{ignore}
 
 \begin{code}
-module Main () where
+module Main (main) where
 import Control.Applicative
 import Control.Monad.State
 import Data.List
