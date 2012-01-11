@@ -47,6 +47,7 @@ module Main (main) where
 import Control.Applicative
 import Control.Monad.State
 import Data.List
+import Data.Version (showVersion)
 
 import System.Console.GetOpt
 import System.Environment
@@ -54,6 +55,14 @@ import System.Exit
 import System.IO
 
 import TwelfPPR.Main
+\end{code}
+
+The \verb'Paths_twelfppr' module is generated automatically by the
+Cabal build system, and includes information from the
+\verb'sindre.cabal' file (which is not reproduced in this work).
+
+\begin{code}
+import Paths_twelfppr (version)
 \end{code}
 
 The startup function extends the default (static) configuration with
@@ -111,7 +120,7 @@ usageStr = do
   return $ usageInfo (header ++ "\n" ++ usage) options
 
 versionString :: String
-versionString = "0.1"
+versionString = showVersion version
 \end{code}
 
 The \verb'--version' option is very similar, also terminating
