@@ -55,8 +55,8 @@ only pass term and abbreviation definitions to the |readDecl| command,
 as it makes no sense to reconstruct the others.
 
 \begin{code}
-reconstruct :: (Functor m, MonadCatchIO m) => String -> [Decl] -> m [Decl]
-reconstruct bin ds = withTwelfServer bin $ do
+reconstruct :: (Functor m, MonadCatchIO m) => String -> Bool -> [Decl] -> m [Decl]
+reconstruct bin debug ds = withTwelfServer bin debug $ do
   _ <- runTwelfCmd "set Print.implicit true"
   mapM reconstruct' ds
     where reconstruct' :: (Functor m, MonadIO m) => Decl -> TwelfMonadT m Decl

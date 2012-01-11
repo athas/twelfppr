@@ -70,6 +70,7 @@ data PPRConfig = PPRConfig {
     , annofile_path  :: Maybe String
     , use_contexts   :: Bool
     , texcmd_prefix  :: String
+    , debug          :: Bool
     }
 
 defaultConfig :: PPRConfig
@@ -81,6 +82,7 @@ defaultConfig = PPRConfig {
                 , annofile_path  = Nothing
                 , use_contexts   = False
                 , texcmd_prefix  = "TPPR"
+                , debug          = False
                 }
 \end{code}
 
@@ -202,7 +204,7 @@ twelfppr conf = runPPR m conf
             pret  <- ppr sig
             liftIO (putStrLn pret)
           path = signature_path conf
-          reconstruct' = reconstruct $ twelf_bin conf
+          reconstruct' = reconstruct (twelf_bin conf) (debug conf)
 \end{code}
 
 \begin{code}

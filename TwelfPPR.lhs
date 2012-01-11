@@ -84,9 +84,9 @@ account the option argument if there is one).
 
 \begin{code}
 options :: [OptDescr (PPRConfig -> IO PPRConfig)]
-options = [optHelp, optVersion, optTwelfBin, 
+options = [optHelp, optVersion, optTwelfBin,
            optFileType, optIgnoreVars, optAnnofilePath,
-           optUseContexts, optCmdPrefix]
+           optUseContexts, optCmdPrefix, optDebug]
 \end{code}
 
 The \verb'--help' option follows standard Unix convention by having
@@ -184,6 +184,13 @@ optCmdPrefix :: OptDescr (PPRConfig -> IO PPRConfig)
 optCmdPrefix = Option ['p'] ["cmd-prefix"] (ReqArg set "PREFIX")
                "Use given prefix when naming TeX commands"
     where set val conf = return $ conf { texcmd_prefix = val }
+\end{code}
+
+\begin{code}
+optDebug :: OptDescr (PPRConfig -> IO PPRConfig)
+optDebug = Option [] ["debug"] (NoArg set)
+           "Show the interaction with the Twelf subprocess on standard error."
+    where set conf = return $ conf { debug = True }
 \end{code}
 
 %include TwelfPPR/LF.lhs

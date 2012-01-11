@@ -43,12 +43,15 @@ subprocess: the standard input, the standard output, and the process
 itself.  Communication will consist solely of writing to its standard
 input and reading from its standard output.  Fortunately, the wire
 protocol is well-documented, and used to implement Twelf's own Emacs
-interface.
+interface.  Additionally, we add a debugging flag, which if true means
+that we should print the interaction with the Twelf subprocess to
+standard error.
 
 \begin{code}
 data TwelfProc = TwelfProc { twelfStdin :: Handle
                            , twelfStdout :: Handle
-                           , twelfProc :: ProcessHandle }
+                           , twelfProc :: ProcessHandle
+                           , twelfDebug :: Bool }
 \end{code}
 
 We do not wish to keep a Twelf subprocess running for the entirety of
@@ -82,12 +85,18 @@ runTwelfCmd :: MonadIO m => String -> TwelfMonadT m String
 runTwelfCmd cmd = do
   twelfin  <- asks twelfStdin
   twelfout <- asks twelfStdout
-  let getresp = do l <- hGetLine twelfout
+  debug <- asks twelfDebug
+  let errmsg = "Twelf subprocess reported an error." ++
+               if debug then "" else "\nRerun with --debug to see details."
+      getresp = do l <- hGetLine twelfout
+                   when debug $ hPutStrLn stderr $ "< " ++ l
                    case l of
-                     "%% ABORT %%" -> error "Twelf subprocess error"
+                     "%% ABORT %%" -> error errmsg
                      "%% OK %%"    -> return []
                      _ -> (l:) <$> getresp
   liftIO $ hPutStrLn twelfin $ cmd ++ "\n"
+  when debug $ 
+    liftIO $ mapM_ (hPutStrLn stderr . ("> "++)) $ lines cmd
   liftIO $ liftM (intercalate "\n") getresp
 \end{code}
 
@@ -99,7 +108,7 @@ handle, as |runTwelfCmd| might otherwise end up infinitely waiting for
 a response to a command that Twelf has not even seen.
 
 \begin{code}
-startTwelfProcess :: MonadIO m => String 
+startTwelfProcess :: MonadIO m => String
                   -> m (Handle, Handle, ProcessHandle)
 startTwelfProcess bin = do
   (Just stdin, Just stdout, _, pid) <- 
@@ -129,8 +138,8 @@ more monads than just |IO|; this is to ensure that the Twelf process
 is terminated even if an IO error happens during the communication.
 
 \begin{code}
-withTwelfServer :: MonadCatchIO m => String -> TwelfMonadT m a -> m a
-withTwelfServer bin m = do
+withTwelfServer :: MonadCatchIO m => String -> Bool -> TwelfMonadT m a -> m a
+withTwelfServer bin debug m = do
   bracket 
     (startTwelfProcess bin)
     (\(_, _, pid) -> liftIO $ terminateProcess pid)
@@ -138,6 +147,7 @@ withTwelfServer bin m = do
       runReaderT m' $ 
         TwelfProc { twelfStdin  = stdin
                   , twelfStdout = stdout
-                  , twelfProc   = pid })
+                  , twelfProc   = pid
+                  , twelfDebug  = debug })
       where TwelfMonadT m' = runTwelfCmd "" >> m
 \end{code}
