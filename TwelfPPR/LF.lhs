@@ -166,7 +166,7 @@ freeInType tr (TyCon (Just tr') t1 t2) =
     (tr /= tr' && freeInType tr t2)
     || freeInType tr t1
 freeInType tr (TyCon Nothing t1 t2) =
-    (freeInType tr t2) || freeInType tr t1
+    freeInType tr t2 || freeInType tr t1
 freeInType tr (TyApp t o) = freeInType tr t || freeInObj tr o
 freeInType _ _ = False
 

@@ -38,7 +38,7 @@
 \begin{code}
 {-# OPTIONS_GHC -Wall #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving, FlexibleInstances,
-  FlexibleContexts, UndecidableInstances, PackageImports #-}
+  FlexibleContexts, UndecidableInstances #-}
 \end{code}
 \end{ignore}
 
@@ -68,10 +68,10 @@ main = do
   opts  <- getOpt RequireOrder options <$> getArgs
   case opts of
     (opts', [cfg], []) -> do
-      let conf = defaultConfig { signature_path = cfg }
+      let conf = defaultConfig { signaturePath = cfg }
       twelfppr =<< foldl (>>=) (return conf) opts'
     (_, nonopts, errs) -> do 
-      mapM_ (hPutStrLn stderr) $ map ("Junk argument: " ++) nonopts
+      mapM_ (hPutStrLn stderr . ("Junk argument: " ++)) nonopts
       usage <- usageStr
       hPutStrLn stderr $ concat errs ++ usage
       exitFailure
@@ -97,7 +97,7 @@ specifies an invalid option.
 
 \begin{code}
 optHelp :: OptDescr (PPRConfig -> IO PPRConfig)
-optHelp = Option ['h'] ["help"]
+optHelp = Option "h" ["help"]
           (NoArg $ \_ -> do
              hPutStrLn stderr =<< usageStr
              exitSuccess)
@@ -119,7 +119,7 @@ the program after printing the version information.
 
 \begin{code}
 optVersion :: OptDescr (PPRConfig -> IO PPRConfig)
-optVersion = Option ['v'] ["version"]
+optVersion = Option "v" ["version"]
              (NoArg $ \_ -> do 
                 hPutStrLn stderr ("TwelfPPR " ++ versionString ++ ".")
                 hPutStrLn stderr "Copyright (C) 2010 Troels Henriksen."
@@ -133,9 +133,9 @@ line.
 
 \begin{code}
 optTwelfBin :: OptDescr (PPRConfig -> IO PPRConfig)
-optTwelfBin = Option ['t'] ["twelf-bin"] (ReqArg set "FILE")
+optTwelfBin = Option "t" ["twelf-bin"] (ReqArg set "FILE")
               "Path to the twelf-server program."
-    where set p conf = return $ conf { twelf_bin = p }
+    where set p conf = return $ conf { twelfBin = p }
 \end{code}
 
 \verb'--filetype' is notable in that it performs a minor sanity check
@@ -144,10 +144,10 @@ on its parameter option, terminating the program if it is not either
 
 \begin{code}
 optFileType :: OptDescr (PPRConfig -> IO PPRConfig)
-optFileType = Option ['f'] ["filetype"] (ReqArg set "cfg|elf")
+optFileType = Option "f" ["filetype"] (ReqArg set "cfg|elf")
               "How to interpret the file argument."
-    where set "elf" conf = return $ conf { default_type = Just ElfFile }
-          set "cfg" conf = return $ conf { default_type = Just CfgFile }
+    where set "elf" conf = return $ conf { defaultType = Just ElfFile }
+          set "cfg" conf = return $ conf { defaultType = Just CfgFile }
           set t     _    = error (emsg t)
           emsg t = "Unknown file type '" ++ t ++ 
                    "'; use 'cfg' or 'elf'."
@@ -159,14 +159,14 @@ program configuration.
 
 \begin{code}
 optIgnoreVars :: OptDescr (PPRConfig -> IO PPRConfig)
-optIgnoreVars = Option ['i'] ["ignore-vars"] (NoArg set)
+optIgnoreVars = Option "i" ["ignore-vars"] (NoArg set)
                 "Merge production rules that differ only in the types of possible bound variables"
-    where set conf = return $ conf { ignore_vars = True }
+    where set conf = return $ conf { ignoreVars = True }
 
 optAnnofilePath :: OptDescr (PPRConfig -> IO PPRConfig)
-optAnnofilePath = Option ['a'] ["annotations"] (ReqArg set "FILE")
+optAnnofilePath = Option "a" ["annotations"] (ReqArg set "FILE")
                   "Read prettyprinting annotations from the given file."
-    where set val conf = return $ conf { annofile_path = Just val }
+    where set val conf = return $ conf { annofilePath = Just val }
 \end{code}
 
 \verb'--use-contexts' asks TwelfPPR to generate judgements that have
@@ -174,16 +174,16 @@ an explicit context, rather than using hypothetical judgements.
 
 \begin{code}
 optUseContexts :: OptDescr (PPRConfig -> IO PPRConfig)
-optUseContexts = Option ['c'] ["use-contexts"] (NoArg set)
+optUseContexts = Option "c" ["use-contexts"] (NoArg set)
                     "Use contexts for judgements."
-    where set conf = return $ conf { use_contexts = False }
+    where set conf = return $ conf { useContexts = False }
 \end{code}
 
 \begin{code}
 optCmdPrefix :: OptDescr (PPRConfig -> IO PPRConfig)
-optCmdPrefix = Option ['p'] ["cmd-prefix"] (ReqArg set "PREFIX")
+optCmdPrefix = Option "p" ["cmd-prefix"] (ReqArg set "PREFIX")
                "Use given prefix when naming TeX commands"
-    where set val conf = return $ conf { texcmd_prefix = val }
+    where set val conf = return $ conf { texcmdPrefix = val }
 \end{code}
 
 \begin{code}

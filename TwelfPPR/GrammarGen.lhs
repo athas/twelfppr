@@ -17,7 +17,7 @@ rules.
 \begin{code}
 {-# OPTIONS_GHC -Wall #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving, FlexibleInstances,
-  FlexibleContexts, UndecidableInstances, PackageImports #-}
+  FlexibleContexts, UndecidableInstances #-}
 \end{code}
 \end{ignore}
 
@@ -111,12 +111,12 @@ simpleContexter sig kr _ =
 
 \begin{code}
 data GGenEnv = GGenEnv 
-    { prod_rules   :: M.Map TyFamUsage GrammarRule
+    { prodRules   :: M.Map TyFamUsage GrammarRule
     }
 
 emptyGGenEnv :: GGenEnv
 emptyGGenEnv = GGenEnv { 
-                 prod_rules= M.empty
+                 prodRules= M.empty
                }
 
 class Monad m => MonadGGen m where
@@ -157,7 +157,7 @@ pprAsProd :: MonadGGen m => Signature
 pprAsProd sig con x@(kr, fd) = do
   let prod = pprWithContext con c x
   modifyGGenEnv $ \s ->
-      s { prod_rules = M.insert (kr, c) prod (prod_rules s) }
+      s { prodRules = M.insert (kr, c) prod (prodRules s) }
   ensureProds sig con prod
     where c = initContext kr fd
 \end{code}
@@ -170,16 +170,16 @@ ensureProds :: MonadGGen m => Signature
 ensureProds sig con (syms, _) =
   forM_ (krs syms) $ \(kr, c) -> do
     let c' = con kr c
-    prods <- getsGGenEnv prod_rules
+    prods <- getsGGenEnv prodRules
     case M.lookup (kr, c') prods of
       Just _ -> return ()
       Nothing -> do
         let prod = pprWithContext con c' (kr, fd)
             fd   = fromJust $ M.lookup kr sig
         modifyGGenEnv $ \s ->
-          s { prod_rules = M.insert (kr, c') prod (prod_rules s) }
+          s { prodRules = M.insert (kr, c') prod (prodRules s) }
         ensureProds sig con prod
-    where krs = concat . map (map snd . snd)
+    where krs = concatMap (map snd . snd)
 
 pprWithContext :: Contexter
                -> FreeVarContext
@@ -187,7 +187,7 @@ pprWithContext :: Contexter
                -> GrammarRule
 pprWithContext con c (kr, fd) = 
   ( syms $ defConstants fd
-  , kr `S.member` c && (hasVar kr fd) )
+  , kr `S.member` c && hasVar kr fd )
     where syms = map (second $ typeProd con c)
 \end{code}
 
@@ -222,7 +222,7 @@ type families used as parameters in the premise.
 
 \begin{code}
 hasVar :: TyFamRef -> TyFamDef -> Bool
-hasVar kr kd = any (typeHasVar) $ defElems kd
+hasVar kr kd = any typeHasVar $ defElems kd
     where typeHasVar    = any premiseHasVar . premises 
           premiseHasVar = isJust . find (==TyName kr) . premises
 

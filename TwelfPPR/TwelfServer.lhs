@@ -8,7 +8,7 @@
 
 \begin{ignore}
 \begin{code}
-{-# LANGUAGE PackageImports, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 \end{code}
 \end{ignore}
 
@@ -139,12 +139,12 @@ is terminated even if an IO error happens during the communication.
 
 \begin{code}
 withTwelfServer :: MonadCatchIO m => String -> Bool -> TwelfMonadT m a -> m a
-withTwelfServer bin debug m = do
+withTwelfServer bin debug m =
   bracket 
     (startTwelfProcess bin)
     (\(_, _, pid) -> liftIO $ terminateProcess pid)
-    (\(stdin, stdout, pid) -> do
-      runReaderT m' $ 
+    (\(stdin, stdout, pid) ->
+      runReaderT m'
         TwelfProc { twelfStdin  = stdin
                   , twelfStdout = stdout
                   , twelfProc   = pid

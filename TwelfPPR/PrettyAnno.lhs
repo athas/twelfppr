@@ -175,19 +175,19 @@ so we have to define a different one.
 
 \begin{code}
 prettifyProd :: MonadPrint m =>
-                   M.Map ConstRef String -> ProdPrettifier m
-prettifyProd dm sig (tr, rs) = do
+                M.Map ConstRef String -> ProdPrettifier m
+prettifyProd dm sig (tr, rs) =
     case M.lookup tr dm of
       Nothing -> defPrettyProd sig (tr, rs)
-      Just s  -> liftM (s++) (liftM (concatMap wrap . concat) $
-                              mapM prettyPremise rs)
+      Just s  -> liftM ((s ++) . concatMap wrap . concat)
+                 (mapM prettyPremise rs)
       where wrap x = "{" ++ x ++ "}"
             prettyPremise ([], ku@(kr, _)) = do
               vr <- namer sig ku
               p <- pprVar vr (TyName kr)
               return [p]
             prettyPremise (kr@(TyFamRef kn):tms, ka) = do
-              let tr' = VarRef $ kn
+              let tr' = VarRef kn
               s    <- bindingVar tr' $ pprVar tr' (TyName kr)
               more <- prettyPremise (tms, ka)
               return (s : more)

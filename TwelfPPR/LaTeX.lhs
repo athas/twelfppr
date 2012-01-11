@@ -66,7 +66,7 @@ inEnv n a b =    "\\begin" ++ braces n
 \begin{code}
 newcommand :: String -> Integer -> String -> String
 newcommand n a b =    "\\newcommand" 
-                   ++ braces ("\\" ++ n)
+                   ++ braces ('\\' : n)
                    ++ brackets (show a)
                    ++ braces b ++ "\n"
 \end{code}

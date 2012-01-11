@@ -8,7 +8,7 @@
 
 \begin{ignore}
 \begin{code}
-{-# LANGUAGE PackageImports, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 \end{code}
 \end{ignore}
 

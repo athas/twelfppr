@@ -80,7 +80,7 @@ idReserved :: String
 idReserved = ":.()[]{}%\""
 
 idChar :: GenParser Char u Char
-idChar = satisfy $ \c -> and [ not $ c `elem` idReserved
+idChar = satisfy $ \c -> and [ c `notElem` idReserved
                              , not $ isSpace c
                              , isPrint c]
 \end{code}
@@ -160,7 +160,7 @@ lexeme p   = p <* whiteSpace
 symbol     :: String -> GenParser Char u String
 symbol     = lexeme . string
 identifier :: GenParser Char u String
-identifier = lexeme $ (many1 idChar <?> "identifier")
+identifier = lexeme (many1 idChar) <?> "identifier"
 parens     :: GenParser Char u a -> GenParser Char u a
 parens     = between (symbol "(") (symbol ")")
 brackets   :: GenParser Char u a -> GenParser Char u a
@@ -235,7 +235,7 @@ defAbbrev (name, t) =
   modifyState $ \s -> s { abbrevs = M.insert name t $ abbrevs s }
 
 maybeExpand :: String -> TwelfParser Term
-maybeExpand s = maybe (ident s) id <$> M.lookup s <$> abbrevs <$> getState
+maybeExpand s = fromMaybe (ident s) <$> M.lookup s <$> abbrevs <$> getState
 \end{code}
 
 Initially, only the standard arrow operators are defined.  These could
@@ -266,7 +266,7 @@ to require that an operator is \textit{not} followed by any character
 that could enlargen the token.
 
 \begin{code}
-procOpList :: OpList -> OperatorTable [Char] DeclState Identity Term
+procOpList :: OpList -> OperatorTable String DeclState Identity Term
 procOpList ops = (map (map p) . arrange) $ ops ++ initOps
     where arrange = groupBy (\(_,x,_) (_,y,_) -> x==y) . reverse
           p (name, _, OpBin a f) = Infix (try $ munch name *> return f) a
@@ -293,7 +293,7 @@ The actual term parsing is carried out by a triplet of parsers:
 term :: TwelfParser Term
 term = join $ expParser <$> getState
 termapps :: TwelfParser Term
-termapps = try notOp `chainl1` (pure TApp)
+termapps = try notOp `chainl1` pure TApp
     where notOp = do t <- simpleterm
                      ops <- (initOps++) <$> userOps <$> getState
                      when (checkOp t ops) $ fail ""
@@ -308,11 +308,11 @@ simpleterm =     try (parens term)
              <|> try (maybeExpand =<< identifier)
              <|> try (encl TSchem braces)
              <|> try (encl TLambda brackets)
-    where encl f brs = (pure f
-                        <*> brs (uncurry (liftM2 (,))
-                                 (identifier, 
-                                  (colon *> term) <|> return THole))
-                        <*> term)
+    where encl f brs = pure f
+                       <*> brs (uncurry (liftM2 (,))
+                                (identifier, 
+                                 (colon *> term) <|> return THole))
+                       <*> term
 \end{code}
 
 The |Decl| data type contains all possible Twelf declarations without
@@ -334,8 +334,8 @@ production rule in Section 3.1 of the Twelf User's Guide.
 
 \begin{code}
 decl :: TwelfParser Decl
-decl = (choice $ map try
-        [dabbr, infixd, prfixd, psfixd, odecl, defd, termd]) 
+decl = choice (map try
+               [dabbr, infixd, prfixd, psfixd, odecl, defd, termd])
        <* symbol "."
     where defd   =     pure DDefinition
                    <*> identifier 
@@ -368,9 +368,9 @@ sig = whiteSpace *> sig'
             d <- decl
             case d of
               DAbbrev s t  -> defAbbrev (s, t)
-              DInfix a p s -> defOp $ (s, p, OpBin a $ TApp . TApp (ident s))
-              DPrefix p s  -> defOp $ (s, p, OpPre $ TApp (ident s))
-              DPostfix p s -> defOp $ (s, p, OpPost $ TApp (ident s))
+              DInfix a p s -> defOp (s, p, OpBin a $ TApp . TApp (ident s))
+              DPrefix p s  -> defOp (s, p, OpPre $ TApp (ident s))
+              DPostfix p s -> defOp (s, p, OpPost $ TApp (ident s))
               _            -> return ()
             (d:) <$> sig'
 \end{code}
@@ -382,13 +382,13 @@ parseDecl :: DeclState
           -> SourceName
           -> String
           -> Either ParseError (Decl, DeclState)
-parseDecl s = runP (pure (,) <*> (genExpParser *> decl) <*> getState) s
+parseDecl = runP (pure (,) <*> (genExpParser *> decl) <*> getState)
 
 parseSig :: DeclState
          -> SourceName 
          -> String 
          -> Either ParseError ([Decl], DeclState)
-parseSig s = runP (pure (,) <*> (genExpParser *> sig) <*> getState) s
+parseSig = runP (pure (,) <*> (genExpParser *> sig) <*> getState)
 \end{code}
 
 \section{Configuration file}
@@ -477,7 +477,7 @@ isFamDef :: Term -> Bool
 isFamDef t = conclusion t == TType
 
 toSignature :: [Decl] -> LF.Signature
-toSignature ds = M.fromList $ catMaybes $ map convert ds
+toSignature ds = M.fromList $ mapMaybe convert ds
     where convert (DTerm s t)
               | isFamDef t =
                   Just ( LF.TyFamRef s
@@ -523,8 +523,8 @@ buildFamily (LF.TyFamRef s) k ds =
           convertA (name, ty, t)   = ( name
                                      , toType M.empty ty
                                      , toObject M.empty t)
-          consts  = map convertT . catMaybes . map pickCs
-          abbs    = map convertA . catMaybes . map pickAs
+          consts  = map convertT . mapMaybe pickCs
+          abbs    = map convertA . mapMaybe pickAs
 \end{code}
 
 Objects and types are merged in a single syntactical category in
@@ -597,11 +597,11 @@ toObject vs (TLambda (name, t1) t2) =
 toObject vs (TVar t) =
   maybe constant var $ M.lookup t vs
     where constant = LF.Const $ LF.ConstRef t
-          var ty   = LF.Var (LF.VarRef t) ty
+          var      = LF.Var (LF.VarRef t)
 toObject vs (TConstant t) =
   maybe constant var $ M.lookup t vs
     where constant = LF.Const $ LF.ConstRef t
-          var ty   = LF.Var (LF.VarRef t) ty
+          var      = LF.Var (LF.VarRef t)
 toObject vs (TApp t1 t2)      =
   LF.App (toObject vs t1) (toObject vs t2)
 toObject vs (TAscription t _) = toObject vs t

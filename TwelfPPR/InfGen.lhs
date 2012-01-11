@@ -144,7 +144,7 @@ infRuleGlobalVars (InfRule js (_, os)) =
     where ovars = mconcat . map objFreeVars
           jvars (je, _, os') = jevars je `S.union` ovars os'
           jevars (vars, aps) =
-            (mconcat $ map (ovars . snd) aps) `S.difference` vars
+            mconcat (map (ovars . snd) aps) `S.difference` vars
 
 infRuleBoundVars :: InfRule -> S.Set (VarRef, Type)
 infRuleBoundVars (InfRule js (_, os)) =
@@ -152,5 +152,5 @@ infRuleBoundVars (InfRule js (_, os)) =
     where ovars = mconcat . map objBoundVars
           jvars (je, _, os') = jevars je `S.union` ovars os'
           jevars (vars, aps) =
-            (mconcat $ map (ovars . snd) aps) `S.union` vars
+            mconcat (map (ovars . snd) aps) `S.union` vars
 \end{code}

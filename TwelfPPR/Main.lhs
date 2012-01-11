@@ -10,7 +10,7 @@
 \begin{code}
 {-# OPTIONS_GHC -Wall #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving, FlexibleInstances,
-  FlexibleContexts, UndecidableInstances, PackageImports #-}
+  FlexibleContexts, UndecidableInstances #-}
 \end{code}
 \end{ignore}
 
@@ -63,26 +63,26 @@ environment).
 
 \begin{code}
 data PPRConfig = PPRConfig { 
-      twelf_bin      :: String
-    , signature_path :: String
-    , default_type   :: Maybe FileType
-    , ignore_vars    :: Bool
-    , annofile_path  :: Maybe String
-    , use_contexts   :: Bool
-    , texcmd_prefix  :: String
-    , debug          :: Bool
+      twelfBin      :: String
+    , signaturePath :: String
+    , defaultType   :: Maybe FileType
+    , ignoreVars    :: Bool
+    , annofilePath  :: Maybe String
+    , useContexts   :: Bool
+    , texcmdPrefix  :: String
+    , debug         :: Bool
     }
 
 defaultConfig :: PPRConfig
 defaultConfig = PPRConfig { 
-                  twelf_bin = "twelf-server"
-                , signature_path = undefined
-                , default_type   = Nothing
-                , ignore_vars    = False
-                , annofile_path  = Nothing
-                , use_contexts   = False
-                , texcmd_prefix  = "TPPR"
-                , debug          = False
+                  twelfBin = "twelf-server"
+                , signaturePath = undefined
+                , defaultType   = Nothing
+                , ignoreVars    = False
+                , annofilePath  = Nothing
+                , useContexts   = False
+                , texcmdPrefix  = "TPPR"
+                , debug         = False
                 }
 \end{code}
 
@@ -94,14 +94,14 @@ for accessing and changing said states in whatever monad we want to
 use for the rest of our program.
 
 \begin{code}
-data PPREnv = PPREnv { g_gen_env  :: GGenEnv
-                     , print_env  :: PrintEnv
-                     , print_conf :: PrintConf PPR }
+data PPREnv = PPREnv { gGenEnv  :: GGenEnv
+                     , printEnv  :: PrintEnv
+                     , printConf :: PrintConf PPR }
 
 emptyPPREnv :: PPREnv
-emptyPPREnv = PPREnv { g_gen_env  = emptyGGenEnv
-                     , print_env  = emptyPrintEnv
-                     , print_conf = emptyPrintConf }
+emptyPPREnv = PPREnv { gGenEnv  = emptyGGenEnv
+                     , printEnv  = emptyPrintEnv
+                     , printConf = emptyPrintConf }
 \end{code}
 
 The |PPR| monad itself is just trivial plumbing.  We maintain the
@@ -115,19 +115,19 @@ newtype PPR a = PPR (ReaderT PPRConfig (StateT PPREnv IO) a)
               PPRConfig,  MonadIO, MonadCatchIO)
 
 instance MonadGGen PPR where
-    getGGenEnv = gets g_gen_env
-    putGGenEnv ge = modify $ \e -> e { g_gen_env = ge }
+    getGGenEnv = gets gGenEnv
+    putGGenEnv ge = modify $ \e -> e { gGenEnv = ge }
 
 instance MonadPrint PPR where
-    getPrintEnv = gets print_env
-    putPrintEnv pe = modify $ \e -> e { print_env = pe }
-    askPrintConf = gets print_conf
-    asksPrintConf f = gets (f . print_conf)
+    getPrintEnv = gets printEnv
+    putPrintEnv pe = modify $ \e -> e { printEnv = pe }
+    askPrintConf = gets printConf
+    asksPrintConf f = gets (f . printConf)
     withPrintConf f m = do
-      old <- gets print_conf
-      modify (\s -> s { print_conf = f old } )
+      old <- gets printConf
+      modify (\s -> s { printConf = f old } )
       v <- m
-      modify (\s -> s { print_conf = old } )
+      modify (\s -> s { printConf = old } )
       return v
 
 runPPR :: PPR a -> PPRConfig -> IO a
@@ -138,7 +138,7 @@ envFromConf :: PPRConfig -> IO PPREnv
 envFromConf conf = do
   pc <- printConfFromConf conf
   return $ emptyPPREnv {
-    print_conf = pc
+    printConf = pc
   }
 
 printConfFromConf :: PPRConfig -> IO (PrintConf PPR)
@@ -148,7 +148,7 @@ printConfFromConf conf =
              , premisePrinter  = pp
              }
       where (pj, pp)
-                | use_contexts conf =
+                | useContexts conf =
                     (judgementWithContext,
                      premiseWithContext)
                 | otherwise         =
@@ -165,24 +165,22 @@ or a judgement, separating each type family with a newline.
 \begin{code}
 ppr :: Signature -> PPR String
 ppr sig = do
-  prefix <- asks texcmd_prefix
-  con <- asks use_contexts
+  prefix <- asks texcmdPrefix
+  con <- asks useContexts
   let kenv kr =
         case M.lookup kr (M.fromList irs) of
           Just (InfRules _ k _) -> kargs k
           Nothing -> error "Unknown kind reference"
   prods <- do
-    simple <- asks ignore_vars
+    simple <- asks ignoreVars
     let fprod = (pprAsProd sig $
                  if simple then simpleContexter sig
                  else defaultContexter sig)
     mapM_ fprod . filter (prodRulePossible . snd) $ defs
-    rules <- M.toList <$> getsGGenEnv prod_rules
+    rules <- M.toList <$> getsGGenEnv prodRules
     prettyAllGrmRules sig prefix rules
-  infs  <- do
-    prettyAllRules kenv con prefix (map snd irs)
-  abbrs <- do
-    prettyAllAbbrs prefix $ map (second defAbbrevs) defs
+  infs  <- prettyAllRules kenv con prefix (map snd irs)
+  abbrs <- prettyAllAbbrs prefix $ map (second defAbbrevs) defs
   return $ intercalate "\n" [infs, prods, abbrs]
     where defs = M.toList sig
           irs = map pprinf defs
@@ -203,14 +201,14 @@ twelfppr conf = runPPR m conf
             maybeReadAnnotations
             pret  <- ppr sig
             liftIO (putStrLn pret)
-          path = signature_path conf
-          reconstruct' = reconstruct (twelf_bin conf) (debug conf)
+          path = signaturePath conf
+          reconstruct' = reconstruct (twelfBin conf) (debug conf)
 \end{code}
 
 \begin{code}
 maybeReadAnnotations :: PPR ()
 maybeReadAnnotations = do
-  maf <- asks annofile_path
+  maf <- asks annofilePath
   case maf of
     Nothing -> return ()
     Just af -> do 
@@ -218,7 +216,7 @@ maybeReadAnnotations = do
       let annos = either (error . show) id (parseAnnotations af c)
           (pka, pta, ptv, pmv, prs) = prettifiers annos
       modify $ \s -> s {
-        print_conf = (print_conf s) 
+        printConf = (printConf s) 
                      { prettyTypeApp  = pka
                      , prettyConstApp = pta
                      , prettyTypeVar  = ptv
@@ -260,7 +258,7 @@ warning and assume \verb'cfg'.
 \begin{code}
 getType :: FilePath -> PPR FileType
 getType path = do
-  def <- asks default_type
+  def <- asks defaultType
   maybe (maybe arbitrary return (fileType path)) return def
   where arbitrary = do
           liftIO $ hPutStrLn stderr $ msg (takeExtension path)
