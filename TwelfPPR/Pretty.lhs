@@ -53,7 +53,6 @@ module TwelfPPR.Pretty ( prettyAllRules
 import Control.Arrow
 import Control.Monad.Reader
 
-import Data.Char
 import Data.List
 import qualified Data.Map as M
 import qualified Data.Set as S
