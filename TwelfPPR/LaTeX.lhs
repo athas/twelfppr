@@ -38,7 +38,7 @@ texescape (s:ss)   = s : texescape ss
 \begin{code}
 argescape :: String -> String
 argescape "" = ""
-argescape ('\\':ss) = "\backslash " ++ argescape ss
+argescape ('\\':ss) = "\\backslash " ++ argescape ss
 argescape ('{':ss)  = "\\{" ++ argescape ss
 argescape ('}':ss)  = "\\}" ++ argescape ss
 argescape (s:ss)    = s : argescape ss
