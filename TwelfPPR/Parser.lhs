@@ -187,6 +187,7 @@ associativity, and its precedence.
 data OpFun = OpBin Assoc (Term -> Term -> Term)
            | OpPost (Term -> Term)
            | OpPre (Term -> Term)
+
 type OpEntry = (String, Integer, OpFun)
 type OpList = [OpEntry]
 
@@ -243,8 +244,9 @@ operator simplifies the rest of the code.
 
 \begin{code}
 initOps :: OpList
-initOps = [("->", -1, OpBin AssocRight TArrow), 
-           ("<-", -1, OpBin AssocLeft (flip TArrow))]
+initOps = [("->", -2, OpBin AssocRight TArrow),
+           ("<-", -2, OpBin AssocLeft (flip TArrow)),
+           (":",  -1, OpBin AssocLeft TAscription)]
 
 initDeclState :: DeclState
 initDeclState = 
@@ -289,10 +291,9 @@ The actual term parsing is carried out by a triplet of parsers:
 
 \begin{code}
 term :: TwelfParser Term
-term = do xp <- expParser <$> getState
-          xp `chainl1` (colon *> pure TAscription <|> pure TApp)
+term = join $ expParser <$> getState
 termapps :: TwelfParser Term
-termapps = try notOp `chainl1` (colon *> pure TAscription <|> pure TApp)
+termapps = try notOp `chainl1` (pure TApp)
     where notOp = do t <- simpleterm
                      ops <- (initOps++) <$> userOps <$> getState
                      when (checkOp t ops) $ fail ""
@@ -428,7 +429,7 @@ instance Show Term where
     show (TApp t1 t2) =
       "(" ++ show t1 ++ " " ++ show t2 ++ ")"
     show (TAscription t1 t2) =
-      show t1 ++ " : " ++ show t2
+      "(" ++ show t1 ++ " : " ++ show t2 ++ ")"
     show THole = "_"
     show (TVar s) = s
     show (TConstant s) = s
