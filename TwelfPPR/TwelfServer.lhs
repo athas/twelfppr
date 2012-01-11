@@ -35,7 +35,7 @@ import Data.List
 
 import System.Exit
 import System.IO hiding (stdin, stdout)
-import System.Process hiding (proc)
+import System.Process
 \end{code}
 
 We need only a triplet of handles to communicate with a Twelf
@@ -102,21 +102,18 @@ a response to a command that Twelf has not even seen.
 startTwelfProcess :: MonadIO m => String 
                   -> m (Handle, Handle, ProcessHandle)
 startTwelfProcess bin = do
-  (Just stdin, Just stdout, _, proc) <- 
-    liftIO $ createProcess $ CreateProcess
-      { cmdspec   = RawCommand bin []
-      , cwd       = Nothing
-      , env       = Nothing
-      , std_in    = CreatePipe
+  (Just stdin, Just stdout, _, pid) <- 
+    liftIO $ createProcess $ (proc bin [])
+      { std_in    = CreatePipe
       , std_out   = CreatePipe
       , std_err   = CreatePipe
       , close_fds = True }
-  code <- liftIO $ getProcessExitCode proc
+  code <- liftIO $ getProcessExitCode pid
   case code of
     Just (ExitFailure e) ->
       error $ "cannot start " ++ bin ++ ": error " ++ show e
     _ -> do liftIO $ hSetBuffering stdin NoBuffering
-            return (stdin, stdout, proc)
+            return (stdin, stdout, pid)
 \end{code}
 
 The final bit of plumbing needed is the function for actually starting
@@ -136,11 +133,11 @@ withTwelfServer :: MonadCatchIO m => String -> TwelfMonadT m a -> m a
 withTwelfServer bin m = do
   bracket 
     (startTwelfProcess bin)
-    (\(_, _, proc) -> liftIO $ terminateProcess proc)
-    (\(stdin, stdout, proc) -> do
+    (\(_, _, pid) -> liftIO $ terminateProcess pid)
+    (\(stdin, stdout, pid) -> do
       runReaderT m' $ 
         TwelfProc { twelfStdin  = stdin
                   , twelfStdout = stdout
-                  , twelfProc   = proc })
+                  , twelfProc   = pid })
       where TwelfMonadT m' = runTwelfCmd "" >> m
 \end{code}
