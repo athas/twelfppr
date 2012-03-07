@@ -385,8 +385,8 @@ sig = whiteSpace *> sig'
             case d of
               DAbbrev s t  -> defAbbrev (s, t)
               DInfix a p s -> defOp (s, p, OpBin a $ TApp . TApp (ident s))
-              DPrefix p s  -> defOp (s, p+10000, OpPre $ TApp (ident s))
-              DPostfix p s -> defOp (s, p+10000, OpPost $ TApp (ident s))
+              DPrefix p s  -> defOp (s, p, OpPre $ TApp (ident s))
+              DPostfix p s -> defOp (s, p, OpPost $ TApp (ident s))
               _            -> return ()
             (d:) <$> sig'
 \end{code}
