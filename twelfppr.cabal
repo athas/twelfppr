@@ -11,7 +11,7 @@ license-file:       LICENSE
 author:             Troels Henriksen
 maintainer:         athas@sigkill.dk
 extra-source-files: README
-cabal-version:      >= 1.2
+cabal-version:      >= 1.6
 build-type:         Simple
 
 flag testing
@@ -19,7 +19,19 @@ flag testing
     default: False
 
 executable twelfppr
-    build-depends: mtl, unix, time, base==4.*, containers, parsec==3.*, filepath==1.*, process, MonadCatchIO-mtl==0.2.*, regex-compat, chsc-plugin, parco
+    Build-Depends:
+      base             >= 4.5  && < 5,
+      mtl              >= 2.0  && < 3,
+      unix             >= 2.5  && < 3,
+      time             >= 1.4  && < 2,
+      containers       >= 0.4  && < 1,
+      parsec           >= 3.0  && < 4,
+      filepath         >= 1.0  && < 2,
+      process          >= 1.1  && < 2,
+      MonadCatchIO-mtl >= 0.2  && < 0.3,
+      regex-compat     >= 0.95 && < 1,
+      parco            >= 0.1  && < 1
+
     main-is:            TwelfPPR.lhs
     other-modules:      TwelfPPR.InfGen
                         TwelfPPR.LaTeX
