@@ -46,7 +46,7 @@ import qualified Data.Map as M
 import Data.Maybe
 import Data.Ord
 
-import Text.Parsec hiding ((<|>), many, optional)
+import Text.Parsec hiding ((<|>), many, optional, token)
 import Text.Parsec.String
 import qualified Text.Parco
 import Text.Parco.Expr
@@ -162,6 +162,9 @@ symbol     :: String -> GenParser Char u String
 symbol     = lexeme . string
 identifier :: GenParser Char u String
 identifier = lexeme (many1 idChar) <?> "identifier"
+token      :: String -> GenParser Char u String
+token k    = lexeme (try $ string k <* notFollowedBy idChar)
+             <?> "token '"++k++"'"
 parens     :: GenParser Char u a -> GenParser Char u a
 parens     = between (symbol "(") (symbol ")")
 brackets   :: GenParser Char u a -> GenParser Char u a
@@ -215,8 +218,8 @@ data DeclState = DeclState {
 type TwelfParser = GenParser Char DeclState
 
 defOp :: OpEntry -> TwelfParser ()
-defOp e = do 
-  modifyState $ \s -> 
+defOp e = do
+  modifyState $ \s ->
     s { userOps = newOps s
       , expParser = buildExpressionParser (procOpList $ newOps s) termapps }
   genExpParser
@@ -263,7 +266,7 @@ initOps = [("->", -2, OpBin AssocRight TArrow),
            (":",  -1, OpBin AssocLeft TAscription)]
 
 initDeclState :: DeclState
-initDeclState = 
+initDeclState =
     DeclState { userOps = []
               , abbrevs = M.empty
               , expParser = fail "expression parser not generated" }
@@ -283,13 +286,12 @@ that could enlargen the token.
 procOpList :: OpList -> OperatorTable TwelfParser Term
 procOpList ops = (map (map p) . arrange) $ ops ++ initOps
     where arrange = groupBy (\(_,x,_) (_,y,_) -> x==y) . reverse
-          p (name, _, OpBin a f) = Infix (try $ munch name *> return f) a
-          p (name, _, OpPost f)  = PostfixAssoc (try $ munch name *> return f)
-          p (name, _, OpPre f)   = PrefixAssoc (try $ munch name *> return f)
-          munch s = lexeme (string s *> notFollowedBy idChar)
+          p (name, _, OpBin a f) = Infix (token name *> return f) a
+          p (name, _, OpPost f)  = PostfixAssoc (token name *> return f)
+          p (name, _, OpPre f)   = PrefixAssoc (token name *> return f)
 \end{code}
 
-The actual term parsing is carried out by a triplet of parsers: 
+The actual term parsing is carried out by a triplet of parsers:
 
 \begin{itemize}
 \item One for parsing \textit{simple} terms, without any application
@@ -305,7 +307,7 @@ The actual term parsing is carried out by a triplet of parsers:
 
 \begin{code}
 term :: TwelfParser Term
-term = join $ expParser <$> getState
+term = join (expParser <$> getState) <?> "term"
 termapps :: TwelfParser Term
 termapps = try notOp `chainl1` pure TApp
     where notOp = do t <- simpleterm
@@ -317,14 +319,15 @@ termapps = try notOp `chainl1` pure TApp
           checkOp (TConstant s) = isOp s
           checkOp _ = const False
 simpleterm :: TwelfParser Term
-simpleterm =     try (parens term)
-             <|> try (symbol "type" *> return TType)
-             <|> try (maybeExpand =<< identifier)
-             <|> try (encl TSchem braces)
-             <|> try (encl TLambda brackets)
+simpleterm =     parens term
+             <|> (token "type" *> return TType)
+             <|> (identifier >>= maybeExpand)
+             <|> encl TSchem braces
+             <|> encl TLambda brackets
+             <?> "simple term"
     where encl f brs = pure f
                        <*> brs (uncurry (liftM2 (,))
-                                (identifier, 
+                                (identifier,
                                  (colon *> term) <|> return THole))
                        <*> term
 \end{code}
@@ -348,25 +351,24 @@ production rule in Section 3.1 of the Twelf User's Guide.
 
 \begin{code}
 decl :: TwelfParser Decl
-decl = choice (map try
-               [dabbr, infixd, prfixd, psfixd, odecl, defd, termd])
+decl = choice [dabbr, infixd, prfixd, psfixd, odecl, try defd, termd]
        <* symbol "."
     where defd   =     pure DDefinition
                    <*> identifier 
                    <*> ((colon *> term) <|> pure THole) <*> (symbol "=" *> term)
-          dabbr  = pure DAbbrev <* symbol "%abbrev" <*> identifier <*> (symbol "=" *> term)
-          infixd = pure DInfix <* symbol "%infix" <*> opassoc <*> lexeme decimal <*> identifier
-          prfixd = pure DPrefix <* symbol "%prefix" <*> lexeme decimal <*> identifier
-          psfixd = pure DPostfix <* symbol "%postfix" <*> lexeme decimal <*> identifier
+          dabbr  = pure DAbbrev <* token "%abbrev" <*> identifier <*> (symbol "=" *> term)
+          infixd = pure DInfix <* token "%infix" <*> opassoc <*> lexeme decimal <*> identifier
+          prfixd = pure DPrefix <* token "%prefix" <*> lexeme decimal <*> identifier
+          psfixd = pure DPostfix <* token "%postfix" <*> lexeme decimal <*> identifier
           odecl  = pure DOtherDecl <* char '%' 
                    <*> identifier 
                    <*> lexeme (many $ noneOf ".")
           termd  = pure DTerm <*> identifier <*> (colon *> term)
 
 opassoc :: GenParser Char u Assoc
-opassoc = symbol "none"  *> pure AssocNone <|>
-          symbol "left"  *> pure AssocLeft <|>
-          symbol "right" *> pure AssocRight
+opassoc = token "none"  *> pure AssocNone <|>
+          token "left"  *> pure AssocLeft <|>
+          token "right" *> pure AssocRight
 \end{code}
 
 The full signature parser is the only one that skips leading
@@ -383,8 +385,8 @@ sig = whiteSpace *> sig'
             case d of
               DAbbrev s t  -> defAbbrev (s, t)
               DInfix a p s -> defOp (s, p, OpBin a $ TApp . TApp (ident s))
-              DPrefix p s  -> defOp (s, p, OpPre $ TApp (ident s))
-              DPostfix p s -> defOp (s, p, OpPost $ TApp (ident s))
+              DPrefix p s  -> defOp (s, p+10000, OpPre $ TApp (ident s))
+              DPostfix p s -> defOp (s, p+10000, OpPost $ TApp (ident s))
               _            -> return ()
             (d:) <$> sig'
 \end{code}
