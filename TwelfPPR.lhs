@@ -45,8 +45,6 @@
 \begin{code}
 module Main (main) where
 import Control.Applicative
-import Control.Monad.State
-import Data.List
 import Data.Version (showVersion)
 
 import System.Console.GetOpt

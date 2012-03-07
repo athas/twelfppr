@@ -38,7 +38,6 @@ import Control.Applicative
 import Control.Monad
 import Data.Char
 import Data.Maybe
-import Data.List
 
 import qualified Data.Map as M
 

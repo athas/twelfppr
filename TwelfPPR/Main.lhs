@@ -40,7 +40,6 @@ import Control.Monad.State
 import Data.Char
 import Data.List
 import qualified Data.Map as M
-import Data.Maybe
 
 import System.FilePath
 import System.IO
