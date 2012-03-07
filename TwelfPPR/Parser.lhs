@@ -8,7 +8,7 @@
 
 \begin{ignore}
 \begin{code}
-{-# LANGUAGE PackageImports #-}
+{-# LANGUAGE PackageImports, FlexibleInstances #-}
 \end{code}
 \end{ignore}
 
@@ -19,10 +19,10 @@ ELF programming language.  The entire language is supported, including
 all syntactical shortcuts and conveniences provided by Twelf.
 
 The parser is constructed through the Parsec library of parser
-combinators.  This may cost performance, compared to using a
-traditional parser generator, but not to a degree significant for our
-uses, especially considering the relatively small size of normal Twelf
-programs.
+combinators, with additional combinators from the Parco library.  This
+may cost performance, compared to using a traditional parser
+generator, but not to a degree significant for our uses, especially
+considering the relatively small size of normal Twelf programs.
 
 \begin{code}
 module TwelfPPR.Parser ( upcaseId
@@ -48,7 +48,8 @@ import Data.Ord
 
 import Text.Parsec hiding ((<|>), many, optional)
 import Text.Parsec.String
-import Text.Parsec.Expr
+import qualified Text.Parco
+import Text.Parco.Expr
 
 import qualified TwelfPPR.LF as LF
 \end{code}
@@ -177,10 +178,11 @@ colon      = symbol ":"
 
 \section{Parsing}
 
-We store operators in a table (sorted by increasing precedence).  This
-is not directly usable by Parsec, but we desire to maintain
-information about the names of operators for use in other parts of the
-prettyprinter.  For each operator we store its name, its
+We will use Parco to generate an expression parser based on a table of
+operators.  The table is sorted by increasing precedence, and while
+the format of the table is not directly usable by Parco, we must
+maintain information about the names of operators for use in other
+parts of the prettyprinter.  For each operator we store its name, its
 associativity, and its precedence.
 
 \begin{code}
@@ -199,7 +201,7 @@ isOp s ops = s `elem` map (\ (x,_,_) -> x) ops
 \end{code}
 
 We will store the current list of user-defined operators in the
-parsing monad itself, and update the Parsec-oriented table whenever
+parsing monad itself, and update the Parco-oriented table whenever
 this list is modified.  Some other declarations also cause changes to
 the global state, and are likewise stored.
 
@@ -238,6 +240,18 @@ maybeExpand :: String -> TwelfParser Term
 maybeExpand s = fromMaybe (ident s) <$> M.lookup s <$> abbrevs <$> getState
 \end{code}
 
+As a technical aside, we must define the following instance before the
+Parco expression parser will work with Parsec.  Note that in the
+definition of \texttt{try}, the left-hand side is
+\texttt{Text.Parco.try}, while the right-hand side is
+\texttt{Text.Parsec.try}.
+
+\begin{code}
+instance Text.Parco.Parser TwelfParser where
+  try = try
+  expects = (<?>)
+\end{code}
+
 Initially, only the standard arrow operators are defined.  These could
 be wired into the parser itself, but handling them as any other
 operator simplifies the rest of the code.
@@ -256,8 +270,8 @@ initDeclState =
 
 \end{code}
 
-Processing the operator list to a table, that Parsec can turn into an
-expression parser, is slightly tricky.  We desire a "maximum munch"
+Processing the operator list to a table that Parco can turn into an
+expression parser is slightly tricky.  We desire a "maximum munch"
 rule (\texttt{<--} should be parsed as the single operator
 \texttt{<--}, even if \texttt{<-} is also defined), which is not done
 by default.  Fortunately, Parsec provides us with the
@@ -266,12 +280,12 @@ to require that an operator is \textit{not} followed by any character
 that could enlargen the token.
 
 \begin{code}
-procOpList :: OpList -> OperatorTable String DeclState Identity Term
+procOpList :: OpList -> OperatorTable TwelfParser Term
 procOpList ops = (map (map p) . arrange) $ ops ++ initOps
     where arrange = groupBy (\(_,x,_) (_,y,_) -> x==y) . reverse
           p (name, _, OpBin a f) = Infix (try $ munch name *> return f) a
-          p (name, _, OpPost f)  = Postfix (try $ munch name *> return f)
-          p (name, _, OpPre f)   = Prefix (try $ munch name *> return f)
+          p (name, _, OpPost f)  = PostfixAssoc (try $ munch name *> return f)
+          p (name, _, OpPre f)   = PrefixAssoc (try $ munch name *> return f)
           munch s = lexeme (string s *> notFollowedBy idChar)
 \end{code}
 
