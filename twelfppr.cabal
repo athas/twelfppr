@@ -30,7 +30,8 @@ executable twelfppr
       process          >= 1.1  && < 2,
       MonadCatchIO-mtl >= 0.2  && < 0.3,
       regex-compat     >= 0.95 && < 1,
-      parco            >= 0.1  && < 1
+      parco            >= 0.1  && < 1,
+      parco-parsec
 
     main-is:            TwelfPPR.lhs
     other-modules:      TwelfPPR.InfGen

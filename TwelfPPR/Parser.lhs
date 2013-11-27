@@ -48,7 +48,7 @@ import Data.Ord
 
 import Text.Parsec hiding ((<|>), many, optional, token)
 import Text.Parsec.String
-import qualified Text.Parco
+import Text.Parco.Parsec()
 import Text.Parco.Expr
 
 import qualified TwelfPPR.LF as LF
@@ -243,18 +243,6 @@ maybeExpand :: String -> TwelfParser Term
 maybeExpand s = fromMaybe (ident s) <$> M.lookup s <$> abbrevs <$> getState
 \end{code}
 
-As a technical aside, we must define the following instance before the
-Parco expression parser will work with Parsec.  Note that in the
-definition of \texttt{try}, the left-hand side is
-\texttt{Text.Parco.try}, while the right-hand side is
-\texttt{Text.Parsec.try}.
-
-\begin{code}
-instance Text.Parco.Parser TwelfParser where
-  try = try
-  expects = (<?>)
-\end{code}
-
 Initially, only the standard arrow operators are defined.  These could
 be wired into the parser itself, but handling them as any other
 operator simplifies the rest of the code.
@@ -287,8 +275,8 @@ procOpList :: OpList -> OperatorTable TwelfParser Term
 procOpList ops = (map (map p) . arrange) $ ops ++ initOps
     where arrange = groupBy (\(_,x,_) (_,y,_) -> x==y) . reverse
           p (name, _, OpBin a f) = Infix (token name *> return f) a
-          p (name, _, OpPost f)  = PostfixAssoc (token name *> return f)
-          p (name, _, OpPre f)   = PrefixAssoc (token name *> return f)
+          p (name, _, OpPost f)  = PostfixNestable (token name *> return f)
+          p (name, _, OpPre f)   = PrefixNestable (token name *> return f)
 \end{code}
 
 The actual term parsing is carried out by a triplet of parsers:
